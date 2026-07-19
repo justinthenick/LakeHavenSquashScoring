@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1b2733">
+<title>Court Card — Squash Scorer</title>
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+  /* ---------- identity -------------------------------------------------
+     The court is neutral; the players wear the colour. Chrome stays
+     quiet grey-blue (glass-back court), ink is near-black, and the only
+     system accent is a squash-ball "double yellow" used sparingly.
+     All accent on the scoring screen comes from the two player colours. */
+  :root{
+    --court:#e9edf0; --court-2:#dfe4e8; --ink:#14202b; --muted:#5d6b78;
+    --line:#c7cfd6; --card:#f7f9fb; --yellow:#f2c200; --danger:#c0392b;
+    --p1:#e6913c; --p2:#6b52ae;                 /* overwritten per match */
+    --safe-top:env(safe-area-inset-top,0px);
+    --safe-bot:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:ui-rounded,"SF Pro Rounded",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--court);color:var(--ink);overscroll-behavior:none;
+    -webkit-user-select:none;user-select:none;
+  }
+  .screen{display:none;min-height:100%;flex-direction:column;
+    padding-top:var(--safe-top);padding-bottom:var(--safe-bot)}
+  .screen.active{display:flex}
+  h1,h2{margin:0;font-weight:800;letter-spacing:-.02em}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  .tnum{font-variant-numeric:tabular-nums}
+
+  /* ---------- generic setup / summary chrome ---------- */
+  .pad{padding:20px 18px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;
+    padding:14px 18px;background:var(--card);border-bottom:1px solid var(--line)}
+  .topbar h2{font-size:19px}
+  .eyebrow{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  label.field{display:block;margin:16px 0 6px;font-size:13px;font-weight:700;color:var(--muted)}
+  input,select{width:100%;padding:15px 16px;font-size:17px;font-weight:600;
+    border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);appearance:none}
+  select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%235d6b78' stroke-width='2.5'><path d='M5 8l5 5 5-5'/></svg>");
+    background-repeat:no-repeat;background-position:right 14px center}
+  .row{display:flex;gap:12px}
+  .row>*{flex:1}
+  .swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+  .sw{width:44px;height:44px;border-radius:12px;border:3px solid transparent;position:relative}
+  .sw[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 3px #fff inset}
+  .cta{display:block;width:100%;padding:18px;margin-top:24px;border-radius:16px;
+    background:var(--ink);color:#fff;font-size:18px;font-weight:800}
+  .cta.ghost{background:transparent;color:var(--muted);font-weight:700;margin-top:10px;padding:12px}
+  .cta:disabled{opacity:.4}
+  .toggle{display:flex;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
+  .toggle button{flex:1;padding:14px;font-weight:800;font-size:16px;color:var(--muted)}
+  .toggle button[aria-pressed="true"]{background:var(--ink);color:#fff}
+  .hint{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.4}
+  .fixtures{margin-top:8px;display:flex;flex-direction:column;gap:10px}
+  .fx{display:flex;justify-content:space-between;align-items:center;padding:16px;
+    background:#fff;border:1px solid var(--line);border-radius:14px;text-align:left;font-weight:700}
+  .fx small{display:block;color:var(--muted);font-weight:600;margin-top:3px}
+  .banner{font-size:13px;padding:10px 14px;border-radius:12px;margin-bottom:4px;font-weight:700}
+  .banner.warn{background:#fff4d6;color:#7a5c00}
+  .banner.err{background:#fbe1de;color:#8a231a}
+  .banner.ok{background:#dff2e5;color:#1c6b3d}
+
+  /* ---------- SCORE SCREEN: the whole panel is the tap target ---------- */
+  #score{background:var(--court)}
+  .scorehead{display:flex;align-items:center;justify-content:space-between;
+    padding:calc(10px + var(--safe-top)) 16px 8px}
+  .scorehead .game{font-size:15px;font-weight:800}
+  .scorehead .game b{color:var(--ink)}
+  .exit{color:var(--danger);font-weight:800;font-size:15px;padding:6px 8px}
+  .arena{flex:1;display:flex;gap:10px;padding:6px 10px 8px;min-height:0}
+  .panel{flex:1;border-radius:22px;position:relative;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;color:#fff;overflow:hidden;
+    transition:transform .06s ease}
+  .panel:active{transform:scale(.985)}
+  .panel .pname{position:absolute;top:16px;left:0;right:0;text-align:center;
+    font-size:17px;font-weight:800;opacity:.92;padding:0 12px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .panel .pts{font-size:clamp(96px,34vw,190px);font-weight:900;line-height:.9;letter-spacing:-.04em}
+  .panel .tapcue{position:absolute;bottom:18px;font-size:12px;font-weight:800;
+    letter-spacing:.12em;text-transform:uppercase;opacity:.72}
+  .serve{position:absolute;top:14px;right:14px;width:52px;height:52px;border-radius:14px;
+    background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;
+    font-size:22px;font-weight:900;border:2px solid rgba(255,255,255,.6)}
+  .serve small{font-size:9px;position:absolute;bottom:5px;letter-spacing:.1em}
+  .footbar{display:flex;gap:10px;padding:6px 10px calc(10px + var(--safe-bot))}
+  .footbar button{flex:1;padding:16px;border-radius:16px;background:var(--card);
+    border:1px solid var(--line);font-weight:800;font-size:16px}
+  .footbar .clock{flex:1;background:transparent;border:none;color:var(--muted);
+    font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center;gap:6px}
+
+  /* ---------- between-games overlay ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(15,22,30,.72);display:none;
+    align-items:center;justify-content:center;padding:24px;z-index:20}
+  .overlay.active{display:flex}
+  .sheet{background:var(--card);border-radius:22px;padding:24px;width:100%;max-width:420px;text-align:center}
+  .sheet h2{font-size:22px;margin-bottom:6px}
+  .sheet p{color:var(--muted);margin:0 0 18px;font-weight:600}
+  .sidepick{display:flex;gap:12px;margin:16px 0}
+  .sidepick button{flex:1;padding:20px;border-radius:16px;border:2px solid var(--line);
+    background:#fff;font-size:20px;font-weight:900;color:var(--muted)}
+  .sidepick button[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:#fff}
+
+  /* ---------- summary table ---------- */
+  .result-hero{display:flex;align-items:center;justify-content:center;gap:22px;margin:22px 0 10px}
+  .result-hero .g{font-size:76px;font-weight:900;line-height:1}
+  .result-hero .vs{width:3px;height:56px;background:var(--line);border-radius:2px}
+  .won{font-weight:800;letter-spacing:.14em;text-transform:uppercase;font-size:13px;text-align:center;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;margin-top:14px}
+  th,td{padding:13px 8px;text-align:center;font-weight:700;font-size:16px}
+  th{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:800}
+  tbody tr{border-top:1px solid var(--line)}
+  tfoot td{border-top:2px solid var(--ink);font-weight:900}
+</style>
+</head>
+<body>
+
+<!-- ================= SETUP ================= -->
+<section id="setup" class="screen active">
+  <div class="topbar"><h2>New match</h2><span class="eyebrow">Court&nbsp;Card</span></div>
+  <div class="pad" style="overflow:auto">
+    <div id="setupBanner"></div>
+
+    <div class="eyebrow" style="margin-bottom:8px">From your sheet</div>
+    <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
+    <button class="cta ghost" id="reloadFx">Reload fixtures</button>
+
+    <div class="eyebrow" style="margin:22px 0 0">Or enter manually</div>
+    <label class="field">Player 1</label>
+    <input id="n1" placeholder="Player 1" autocomplete="off">
+    <div class="swatches" id="sw1"></div>
+    <label class="field">Player 2</label>
+    <input id="n2" placeholder="Player 2" autocomplete="off">
+    <div class="swatches" id="sw2"></div>
+
+    <div class="row">
+      <div><label class="field">Points / game</label>
+        <select id="pts"><option>11</option><option>15</option><option>21</option></select></div>
+      <div><label class="field">Match length</label>
+        <select id="best"><option value="1">1 game</option><option value="3">Best of 3</option><option value="5" selected>Best of 5</option></select></div>
+    </div>
+
+    <label class="field">Win by two at game point</label>
+    <div class="toggle" id="wbt">
+      <button data-v="1" aria-pressed="true">Yes</button>
+      <button data-v="0">No (sudden)</button>
+    </div>
+
+    <label class="field">First serve</label>
+    <div class="toggle" id="firstServe">
+      <button data-v="0" aria-pressed="true" id="fs1">Player 1</button>
+      <button data-v="1" id="fs2">Player 2</button>
+    </div>
+
+    <button class="cta" id="start">Start scoring</button>
+    <div class="hint" style="margin-top:14px">Server retains serve and swaps box each point won. Lose the rally and the serve passes over — new server starts on the right (tap the box badge to move left).</div>
+  </div>
+</section>
+
+<!-- ================= SCORE ================= -->
+<section id="score" class="screen">
+  <div class="scorehead">
+    <button class="exit" id="exit">Exit</button>
+    <div class="game">Game <b id="gameNo">1</b> · <span id="gamesLine" class="tnum">0–0</span> · to <span id="targetLine">15</span></div>
+    <span style="width:44px"></span>
+  </div>
+  <div class="arena">
+    <button class="panel" id="panel0">
+      <span class="pname" id="name0">Player 1</span>
+      <span class="serve" id="serve0" hidden>R<small>SERVE</small></span>
+      <span class="pts tnum" id="pts0">0</span>
+      <span class="tapcue">tap = won rally</span>
+    </button>
+    <button class="panel" id="panel1">
+      <span class="pname" id="name1">Player 2</span>
+      <span class="serve" id="serve1" hidden>R<small>SERVE</small></span>
+      <span class="pts tnum" id="pts1">0</span>
+      <span class="tapcue">tap = won rally</span>
+    </button>
+  </div>
+  <div class="footbar">
+    <button id="undo">↶ Undo</button>
+    <span class="clock tnum">⏱ <span id="clock">00:00</span></span>
+    <button id="flip">Swap box ⇄</button>
+  </div>
+</section>
+
+<!-- between-games -->
+<div class="overlay" id="gap">
+  <div class="sheet">
+    <h2 id="gapTitle">Game 1 to Player 1</h2>
+    <p id="gapSub">Player 1 serves next. Pick the starting box.</p>
+    <div class="sidepick" id="gapSide">
+      <button data-v="R" aria-pressed="true">Right</button>
+      <button data-v="L">Left</button>
+    </div>
+    <button class="cta" id="gapGo">Start next game</button>
+  </div>
+</div>
+
+<!-- ================= SUMMARY ================= -->
+<section id="summary" class="screen">
+  <div class="topbar"><h2>Match summary</h2><span class="eyebrow" id="doneTag">Completed</span></div>
+  <div class="pad" style="overflow:auto">
+    <div id="saveBanner"></div>
+    <div class="won" id="wonLine">—</div>
+    <div class="result-hero">
+      <div class="g" id="hg0" style="color:var(--p1)">0</div>
+      <div class="vs"></div>
+      <div class="g" id="hg1" style="color:var(--p2)">1</div>
+    </div>
+    <table>
+      <thead><tr><th>Game</th><th id="th0">P1</th><th id="th1">P2</th></tr></thead>
+      <tbody id="gameRows"></tbody>
+      <tfoot><tr><td>Points</td><td id="tot0" class="tnum">0</td><td id="tot1" class="tnum">0</td></tr></tfoot>
+    </table>
+    <button class="cta" id="save">Save to sheet</button>
+    <button class="cta ghost" id="again">New match</button>
+    <div class="hint" id="queueHint" style="margin-top:12px"></div>
+  </div>
+</section>
+
+<script>
+/* ==========================================================================
+   1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
+   ========================================================================== */
+var CONFIG = {
+  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec
+  SHARED_SECRET:   "change-me"  // must match the SECRET in Code.gs
+};
+
+/* ==========================================================================
+   2. SCORING ENGINE  (identical to engine.js — node-tested, 22/22)
+   ========================================================================== */
+function gamesNeeded(bestOf){return Math.floor(bestOf/2)+1;}
+function createMatch(config){return{config:config,points:[0,0],server:config.firstServer,side:'R',log:[],games:[],over:false,matchWinner:null,history:[]};}
+function snapshot(m){return{points:[m.points[0],m.points[1]],server:m.server,side:m.side,log:m.log.slice(),games:m.games.map(function(g){return{points:[g.points[0],g.points[1]],winner:g.winner};}),over:m.over,matchWinner:m.matchWinner};}
+function restore(m,s){m.points=s.points;m.server=s.server;m.side=s.side;m.log=s.log;m.games=s.games;m.over=s.over;m.matchWinner=s.matchWinner;}
+function gameResult(points,cfg){var a=points[0],b=points[1];var hi=Math.max(a,b),lo=Math.min(a,b);if(hi<cfg.pointsToWin)return null;if(cfg.winByTwo&&(hi-lo)<2)return null;return a>b?0:1;}
+function gamesWonBy(m,idx,inc){var n=0;for(var i=0;i<m.games.length;i++)if(m.games[i].winner===idx)n++;if(inc!==undefined&&inc===idx)n++;return n;}
+function wonRally(m,winner){if(m.over)return m;m.history.push(snapshot(m));m.points[winner]+=1;m.log.push({winner:winner,score:[m.points[0],m.points[1]],server:m.server,side:m.side});if(winner===m.server){m.side=(m.side==='R')?'L':'R';}else{m.server=winner;m.side='R';}var g=gameResult(m.points,m.config);if(g!==null){var need=gamesNeeded(m.config.bestOf);var wins=gamesWonBy(m,g,g);m.games.push({points:[m.points[0],m.points[1]],winner:g});if(wins>=need){m.over=true;m.matchWinner=g;}else{m.points=[0,0];m.server=g;m.side='R';}}return m;}
+function toggleSide(m){if(m.over)return m;m.history.push(snapshot(m));m.side=(m.side==='R')?'L':'R';return m;}
+function undo(m){if(m.history.length===0)return m;restore(m,m.history.pop());return m;}
+function matchGamesScore(m){return[gamesWonBy(m,0),gamesWonBy(m,1)];}
+
+/* ==========================================================================
+   3. STORAGE  (localStorage where available; memory fallback so it never
+      throws in restricted previews. Persistence is real once deployed.)
+   ========================================================================== */
+var store=(function(){
+  var mem={};
+  try{var k='__t';localStorage.setItem(k,'1');localStorage.removeItem(k);
+    return{get:function(k){return localStorage.getItem(k);},set:function(k,v){localStorage.setItem(k,v);},del:function(k){localStorage.removeItem(k);}};}
+  catch(e){return{get:function(k){return k in mem?mem[k]:null;},set:function(k,v){mem[k]=v;},del:function(k){delete mem[k];}};}
+})();
+
+/* ==========================================================================
+   4. SHEET CLIENT  — GET reads, POST writes. No custom headers => no CORS
+      preflight (the usual Apps-Script gotcha). See SETUP.md.
+   ========================================================================== */
+function scriptConfigured(){return CONFIG.APPS_SCRIPT_URL && CONFIG.APPS_SCRIPT_URL.indexOf('http')===0;}
+
+function fetchFixtures(){
+  if(!scriptConfigured())return Promise.reject({reason:'unconfigured'});
+  var u=CONFIG.APPS_SCRIPT_URL+'?action=fixtures&secret='+encodeURIComponent(CONFIG.SHARED_SECRET);
+  return fetch(u).then(function(r){return r.json();}).then(function(d){
+    if(!d||d.ok===false)throw{reason:'server',msg:(d&&d.error)||'rejected'};
+    return d.fixtures||[];
+  });
+}
+function postResult(payload){
+  if(!scriptConfigured())return Promise.reject({reason:'unconfigured'});
+  payload.secret=CONFIG.SHARED_SECRET;
+  // body is a plain string => Content-Type text/plain => "simple request", no preflight
+  return fetch(CONFIG.APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)})
+    .then(function(r){return r.json();})
+    .then(function(d){if(!d||d.ok===false)throw{reason:'server',msg:(d&&d.error)||'rejected'};return d;});
+}
+
+/* offline queue -------------------------------------------------------- */
+var QKEY='cc_queue';
+function loadQueue(){try{return JSON.parse(store.get(QKEY)||'[]');}catch(e){return[];}}
+function saveQueue(q){store.set(QKEY,JSON.stringify(q));}
+function enqueue(p){var q=loadQueue();q.push(p);saveQueue(q);}
+function flushQueue(){
+  var q=loadQueue();if(!q.length)return Promise.resolve(0);
+  var sent=0;
+  return q.reduce(function(chain,item){
+    return chain.then(function(){return postResult(item).then(function(){sent++;});});
+  },Promise.resolve()).then(function(){saveQueue([]);return sent;},
+    function(){/* stop on first failure, keep the rest queued */ 
+      var remaining=loadQueue().slice(sent);saveQueue(remaining);throw{sent:sent};});
+}
+
+/* active-match autosave (crash/reopen resilience) --------------------- */
+var AKEY='cc_active';
+function makeMatchId(){var d=new Date();function p(n){return(n<10?'0':'')+n;}
+  return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'-'+Math.random().toString(36).slice(2,5);}
+function persistActive(){if(!M)return;try{store.set(AKEY,JSON.stringify({M:M,elapsed:elapsed,fixture:activeFixture}));}catch(e){}}
+function clearActive(){store.del(AKEY);}
+function loadActive(){try{return JSON.parse(store.get(AKEY)||'null');}catch(e){return null;}}
+
+/* ==========================================================================
+   5. UI STATE
+   ========================================================================== */
+var PALETTE=['#e6913c','#5aa1e0','#e58ca0','#79c4ac','#6b52ae','#8a94a3',
+             '#ffffff','#b268d4','#3f6b46','#3a536e','#d9b13b','#111111'];
+var chosen={c1:'#e6913c',c2:'#6b52ae'};
+var M=null, activeFixture=null, tick=null, elapsed=0;
+
+function $(id){return document.getElementById(id);}
+function show(scr){['setup','score','summary'].forEach(function(s){$(s).classList.toggle('active',s===scr);});}
+
+/* palette swatches */
+function buildSwatches(host,which){
+  host.innerHTML='';
+  PALETTE.forEach(function(c){
+    var b=document.createElement('button');b.className='sw';b.style.background=c;
+    if(c==='#ffffff')b.style.border='3px solid #c7cfd6';
+    b.setAttribute('aria-pressed',(chosen[which]===c)?'true':'false');
+    b.onclick=function(){chosen[which]=c;
+      [].slice.call(host.children).forEach(function(x){x.setAttribute('aria-pressed','false');});
+      b.setAttribute('aria-pressed','true');refreshFirstServeLabels();};
+    host.appendChild(b);
+  });
+}
+buildSwatches($('sw1'),'c1');buildSwatches($('sw2'),'c2');
+
+/* generic toggle wiring */
+function wireToggle(host,cb){
+  [].slice.call(host.children).forEach(function(btn){
+    btn.onclick=function(){[].slice.call(host.children).forEach(function(x){x.setAttribute('aria-pressed','false');});
+      btn.setAttribute('aria-pressed','true');if(cb)cb(btn.dataset.v);};
+  });
+}
+wireToggle($('wbt'));wireToggle($('firstServe'));
+
+function pressedVal(host){var b=host.querySelector('[aria-pressed="true"]');return b?b.dataset.v:null;}
+function names(){return[$('n1').value.trim()||'Player 1',$('n2').value.trim()||'Player 2'];}
+function refreshFirstServeLabels(){var n=names();$('fs1').textContent=n[0];$('fs2').textContent=n[1];}
+$('n1').oninput=refreshFirstServeLabels;$('n2').oninput=refreshFirstServeLabels;
+
+/* fixtures list */
+function renderFixtures(list){
+  var host=$('fixtures');host.innerHTML='';
+  if(!list.length){host.innerHTML='<div class="hint">No fixtures found in the sheet.</div>';return;}
+  list.forEach(function(fx){
+    var b=document.createElement('button');b.className='fx';
+    var meta=[fx.event,fx.venue].filter(Boolean).join(' · ');
+    b.innerHTML='<span>'+esc(fx.player1||'?')+' vs '+esc(fx.player2||'?')+
+      (meta?'<small>'+esc(meta)+'</small>':'')+'</span><span>›</span>';
+    b.onclick=function(){applyFixture(fx);};
+    host.appendChild(b);
+  });
+}
+function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+function applyFixture(fx){
+  activeFixture=fx;
+  $('n1').value=fx.player1||'';$('n2').value=fx.player2||'';
+  if(fx.color1){chosen.c1=fx.color1;}if(fx.color2){chosen.c2=fx.color2;}
+  buildSwatches($('sw1'),'c1');buildSwatches($('sw2'),'c2');
+  if(fx.pointsToWin){$('pts').value=String(fx.pointsToWin);}
+  if(fx.bestOf){$('best').value=String(fx.bestOf);}
+  refreshFirstServeLabels();
+  banner('setupBanner','ok','Loaded: '+(fx.player1||'?')+' vs '+(fx.player2||'?')+'. Adjust below or start.');
+  window.scrollTo(0,document.body.scrollHeight);
+}
+function banner(id,kind,msg){var el=$(id);if(!msg){el.innerHTML='';return;}el.innerHTML='<div class="banner '+kind+'">'+esc(msg)+'</div>';}
+
+function loadFixtures(){
+  var host=$('fixtures');host.innerHTML='<div class="hint">Looking for fixtures…</div>';
+  if(!scriptConfigured()){host.innerHTML='<div class="hint">Sheet not connected yet — add your Apps Script URL in the file, or enter players manually below.</div>';return;}
+  fetchFixtures().then(renderFixtures).catch(function(err){
+    host.innerHTML='<div class="hint">Couldn\u2019t reach the sheet ('+esc(err.msg||err.reason||'offline')+'). Enter players manually below.</div>';
+  });
+}
+$('reloadFx').onclick=loadFixtures;
+
+/* ---- start match ---- */
+$('start').onclick=function(){
+  var n=names();
+  var cfg={
+    players:[{name:n[0],color:chosen.c1},{name:n[1],color:chosen.c2}],
+    pointsToWin:parseInt($('pts').value,10),
+    winByTwo:pressedVal($('wbt'))==='1',
+    bestOf:parseInt($('best').value,10),
+    firstServer:parseInt(pressedVal($('firstServe')),10)
+  };
+  M=createMatch(cfg);
+  M.matchId=makeMatchId();
+  applyMatchChrome(cfg);
+  elapsed=0;startClock();renderScore();show('score');
+};
+function isLight(hex){var c=hex.replace('#','');if(c.length===3)c=c.replace(/./g,'$&$&');
+  var r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),b=parseInt(c.substr(4,2),16);
+  return (0.299*r+0.587*g+0.114*b)>186;}
+
+/* ---- clock ---- */
+function startClock(){clearInterval(tick);tick=setInterval(function(){elapsed++;paintClock();},1000);paintClock();}
+function paintClock(){var m=Math.floor(elapsed/60),s=elapsed%60;$('clock').textContent=(m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
+
+/* ---- render score screen ---- */
+var lastGames=0;
+function renderScore(){
+  persistActive();
+  $('pts0').textContent=M.points[0];$('pts1').textContent=M.points[1];
+  var gs=matchGamesScore(M);$('gamesLine').textContent=gs[0]+'–'+gs[1];
+  $('gameNo').textContent=M.games.length+1;
+  for(var i=0;i<2;i++){
+    var sv=$('serve'+i);
+    if(M.server===i&&!M.over){sv.hidden=false;sv.firstChild.nodeValue=M.side;}
+    else sv.hidden=true;
+  }
+  // detect game / match transition
+  if(M.over){clearInterval(tick);goSummary();return;}
+  if(M.games.length>lastGames){openGap();}
+  lastGames=M.games.length;
+}
+function tap(i){wonRally(M,i);renderScore();}
+$('panel0').onclick=function(){tap(0);};
+$('panel1').onclick=function(){tap(1);};
+$('undo').onclick=function(){undo(M);
+  if($('gap').classList.contains('active'))$('gap').classList.remove('active');
+  lastGames=M.games.length;renderScore();};
+$('flip').onclick=function(){toggleSide(M);renderScore();};
+$('serve0').onclick=function(ev){ev.stopPropagation();toggleSide(M);renderScore();};
+$('serve1').onclick=function(ev){ev.stopPropagation();toggleSide(M);renderScore();};
+$('exit').onclick=function(){if(confirm('Exit match without saving?')){clearInterval(tick);show('setup');}};
+
+/* ---- between games overlay ---- */
+var gapSide='R';
+function openGap(){
+  var last=M.games[M.games.length-1];
+  $('gapTitle').textContent='Game '+M.games.length+' to '+M.config.players[last.winner].name+
+    ' ('+last.points[0]+'–'+last.points[1]+')';
+  $('gapSub').textContent=M.config.players[M.server].name+' serves next. Pick the starting box.';
+  gapSide=M.side;
+  [].slice.call($('gapSide').children).forEach(function(b){b.setAttribute('aria-pressed',b.dataset.v===gapSide?'true':'false');});
+  $('gap').classList.add('active');
+}
+[].slice.call($('gapSide').children).forEach(function(b){
+  b.onclick=function(){gapSide=b.dataset.v;[].slice.call($('gapSide').children).forEach(function(x){x.setAttribute('aria-pressed','false');});b.setAttribute('aria-pressed','true');};
+});
+$('gapGo').onclick=function(){if(M.side!==gapSide)M.side=gapSide;$('gap').classList.remove('active');renderScore();};
+
+/* ==========================================================================
+   6. SUMMARY + SAVE
+   ========================================================================== */
+function buildPayload(){
+  var gs=matchGamesScore(M);var n=M.config.players;
+  var lineParts=M.games.map(function(g){return g.points[0]+'-'+g.points[1];});
+  return{
+    action:'result',
+    matchId:M.matchId,
+    fixtureId:activeFixture?activeFixture.id:'',
+    date:new Date().toISOString().slice(0,10),
+    player1:n[0].name,player2:n[1].name,
+    color1:n[0].color,color2:n[1].color,
+    event:activeFixture?activeFixture.event||'':'',
+    venue:activeFixture?activeFixture.venue||'':'',
+    games:M.games.map(function(g){return{p1:g.points[0],p2:g.points[1],winner:g.winner+1};}),
+    scoreLine:gs[0]+'-'+gs[1]+' ('+lineParts.join(', ')+')',
+    gamesP1:gs[0],gamesP2:gs[1],
+    pointsP1:M.games.reduce(function(a,g){return a+g.points[0];},0),
+    pointsP2:M.games.reduce(function(a,g){return a+g.points[1];},0),
+    winner:(M.matchWinner!=null?n[M.matchWinner].name:''),
+    winnerIndex:(M.matchWinner!=null?M.matchWinner+1:0),
+    durationSec:elapsed
+  };
+}
+var pendingPayload=null;
+function goSummary(){
+  var p=buildPayload();pendingPayload=p;var n=M.config.players;
+  $('th0').textContent=n[0].name;$('th1').textContent=n[1].name;
+  $('hg0').textContent=p.gamesP1;$('hg1').textContent=p.gamesP2;
+  $('wonLine').textContent=p.winner?(p.winner+' wins '+p.gamesP1+'–'+p.gamesP2):'Match ended';
+  var body=$('gameRows');body.innerHTML='';
+  p.games.forEach(function(g,i){var tr=document.createElement('tr');
+    tr.innerHTML='<td>#'+(i+1)+'</td><td class="tnum">'+g.p1+'</td><td class="tnum">'+g.p2+'</td>';
+    body.appendChild(tr);});
+  $('tot0').textContent=p.pointsP1;$('tot1').textContent=p.pointsP2;
+  banner('saveBanner','',null);
+  $('queueHint').textContent=queueStatus();
+  show('summary');
+}
+function queueStatus(){var q=loadQueue();return q.length?(q.length+' result'+(q.length>1?'s':'')+' waiting to sync.'):'';}
+
+$('save').onclick=function(){
+  var p=pendingPayload;if(!p)return;
+  $('save').disabled=true;$('save').textContent='Saving…';
+  postResult(p).then(function(){
+    banner('saveBanner','ok','Saved to sheet.');$('save').textContent='Saved ✓';clearActive();
+  }).catch(function(err){
+    if(err.reason==='unconfigured'){
+      banner('saveBanner','warn','Sheet not connected — add your Apps Script URL to save.');
+      $('save').disabled=false;$('save').textContent='Save to sheet';return;
+    }
+    enqueue(p);banner('saveBanner','warn','Offline — result queued. It will sync next time you open with signal.');
+    $('save').textContent='Queued';$('queueHint').textContent=queueStatus();clearActive();
+  });
+};
+$('again').onclick=function(){M=null;activeFixture=null;lastGames=0;clearActive();
+  banner('setupBanner','',null);show('setup');loadFixtures();};
+
+/* ==========================================================================
+   7. RESUME + BOOT
+   ========================================================================== */
+function applyMatchChrome(cfg){
+  document.documentElement.style.setProperty('--p1',cfg.players[0].color);
+  document.documentElement.style.setProperty('--p2',cfg.players[1].color);
+  $('panel0').style.background='var(--p1)';$('panel1').style.background='var(--p2)';
+  $('panel0').style.color=isLight(cfg.players[0].color)?'#14202b':'#fff';
+  $('panel1').style.color=isLight(cfg.players[1].color)?'#14202b':'#fff';
+  $('name0').textContent=cfg.players[0].name;$('name1').textContent=cfg.players[1].name;
+  $('targetLine').textContent=cfg.pointsToWin;
+}
+function resumeMatch(saved){
+  M=saved.M;elapsed=saved.elapsed||0;activeFixture=saved.fixture||null;
+  applyMatchChrome(M.config);lastGames=M.games.length;
+  if(M.over){goSummary();}else{startClock();renderScore();show('score');}
+}
+function showResume(saved){
+  var m=saved.M,n=m.config.players,gs=[0,0];
+  m.games.forEach(function(g){gs[g.winner]++;});
+  var status=m.over?'finished, not yet saved':('in progress '+gs[0]+'\u2013'+gs[1]);
+  var el=$('setupBanner');
+  el.innerHTML='<div class="banner warn" style="display:flex;justify-content:space-between;align-items:center;gap:12px">'+
+    '<span>'+esc(n[0].name)+' vs '+esc(n[1].name)+' — '+status+'</span>'+
+    '<span style="white-space:nowrap"><button id="rResume" style="font-weight:800;color:#7a5c00;background:none;border:none;text-decoration:underline">Resume</button>&nbsp;'+
+    '<button id="rDiscard" style="font-weight:800;color:#8a231a;background:none;border:none">Discard</button></span></div>';
+  $('rResume').onclick=function(){resumeMatch(saved);};
+  $('rDiscard').onclick=function(){clearActive();el.innerHTML='';};
+}
+
+refreshFirstServeLabels();loadFixtures();
+var _saved=loadActive();if(_saved&&_saved.M)showResume(_saved);
+// try to drain any queued results on load
+if(scriptConfigured()){flushQueue().then(function(n){if(n)console.log('synced',n,'queued results');}).catch(function(){});}
+// register service worker if present (real deployment); harmless if absent
+if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(function(){});}
+// keep screen awake during a match if the browser allows it
+var wakeLock=null;
+async function keepAwake(){try{if('wakeLock' in navigator)wakeLock=await navigator.wakeLock.request('screen');}catch(e){}}
+document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')keepAwake();});
+keepAwake();
+</script>
+</body>
+</html>
