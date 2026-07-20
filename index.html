@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#1b2733">
 <title>Court Card — Squash Scorer</title>
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="manifest" href="manifest.json">
 <style>
   /* ---------- identity -------------------------------------------------
      The court is neutral; the players wear the colour. Chrome stays
@@ -84,9 +84,11 @@
   .panel .pts{font-size:clamp(96px,34vw,190px);font-weight:900;line-height:.9;letter-spacing:-.04em}
   .panel .tapcue{position:absolute;bottom:18px;font-size:12px;font-weight:800;
     letter-spacing:.12em;text-transform:uppercase;opacity:.72}
-  .serve{position:absolute;top:14px;right:14px;width:52px;height:52px;border-radius:14px;
-    background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;
-    font-size:22px;font-weight:900;border:2px solid rgba(255,255,255,.6)}
+  .serve{position:absolute;top:14px;width:52px;height:52px;border-radius:14px;
+    background:rgba(255,255,255,.22);display:none;align-items:center;justify-content:center;
+    font-size:22px;font-weight:900;border:2px solid rgba(255,255,255,.6);
+    transition:left .12s ease,right .12s ease}
+  .serve.show{display:flex}
   .serve small{font-size:9px;position:absolute;bottom:5px;letter-spacing:.1em}
   .footbar{display:flex;gap:10px;padding:6px 10px calc(10px + var(--safe-bot))}
   .footbar button{flex:1;padding:16px;border-radius:16px;background:var(--card);
@@ -138,18 +140,7 @@
     <input id="n2" placeholder="Player 2" autocomplete="off">
     <div class="swatches" id="sw2"></div>
 
-    <div class="row">
-      <div><label class="field">Points / game</label>
-        <select id="pts"><option>11</option><option>15</option><option>21</option></select></div>
-      <div><label class="field">Match length</label>
-        <select id="best"><option value="1">1 game</option><option value="3">Best of 3</option><option value="5" selected>Best of 5</option></select></div>
-    </div>
-
-    <label class="field">Win by two at game point</label>
-    <div class="toggle" id="wbt">
-      <button data-v="1" aria-pressed="true">Yes</button>
-      <button data-v="0">No (sudden)</button>
-    </div>
+    <div class="hint" style="margin-top:18px">Format: 15 points, best of 5, sudden death (no win-by-two).</div>
 
     <label class="field">First serve</label>
     <div class="toggle" id="firstServe">
@@ -230,8 +221,8 @@
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
    ========================================================================== */
 var CONFIG = {
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwgoor0B851kNQwA45_xF8phxsXBHr1b2eA_teDEV9hFM0TK2spLIylwIUUsQDmWaCREw/exec",          // e.g. https://script.google.com/macros/s/AKfy.../exec
-  SHARED_SECRET:   "ivebeenchanged123"  // must match the SECRET in Code.gs
+  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec
+  SHARED_SECRET:   "change-me"  // must match the SECRET in Code.gs
 };
 
 /* ==========================================================================
@@ -265,10 +256,25 @@ var store=(function(){
    ========================================================================== */
 function scriptConfigured(){return CONFIG.APPS_SCRIPT_URL && CONFIG.APPS_SCRIPT_URL.indexOf('http')===0;}
 
+/* JSONP: load via <script> tag so the cross-origin read isn't subject to CORS.
+   Apps Script returns callback(<json>) when a ?callback= param is present. */
+function jsonp(url){
+  return new Promise(function(resolve,reject){
+    var cb='__cc_'+Date.now()+Math.floor(Math.random()*1e4);
+    var s=document.createElement('script');
+    var timer=setTimeout(function(){cleanup();reject({reason:'timeout'});},15000);
+    function cleanup(){clearTimeout(timer);try{delete window[cb];}catch(e){window[cb]=undefined;}if(s.parentNode)s.parentNode.removeChild(s);}
+    window[cb]=function(data){cleanup();resolve(data);};
+    s.onerror=function(){cleanup();reject({reason:'network'});};
+    s.src=url+(url.indexOf('?')>-1?'&':'?')+'callback='+cb;
+    document.head.appendChild(s);
+  });
+}
+
 function fetchFixtures(){
   if(!scriptConfigured())return Promise.reject({reason:'unconfigured'});
   var u=CONFIG.APPS_SCRIPT_URL+'?action=fixtures&secret='+encodeURIComponent(CONFIG.SHARED_SECRET);
-  return fetch(u).then(function(r){return r.json();}).then(function(d){
+  return jsonp(u).then(function(d){
     if(!d||d.ok===false)throw{reason:'server',msg:(d&&d.error)||'rejected'};
     return d.fixtures||[];
   });
@@ -276,7 +282,9 @@ function fetchFixtures(){
 function postResult(payload){
   if(!scriptConfigured())return Promise.reject({reason:'unconfigured'});
   payload.secret=CONFIG.SHARED_SECRET;
-  // body is a plain string => Content-Type text/plain => "simple request", no preflight
+  // body is a plain string => Content-Type text/plain => "simple request", no preflight.
+  // If the browser blocks reading the response, the write still lands; the server
+  // de-dupes by matchId so a queued retry can't create a duplicate.
   return fetch(CONFIG.APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)})
     .then(function(r){return r.json();})
     .then(function(d){if(!d||d.ok===false)throw{reason:'server',msg:(d&&d.error)||'rejected'};return d;});
@@ -338,7 +346,7 @@ function wireToggle(host,cb){
       btn.setAttribute('aria-pressed','true');if(cb)cb(btn.dataset.v);};
   });
 }
-wireToggle($('wbt'));wireToggle($('firstServe'));
+wireToggle($('firstServe'));
 
 function pressedVal(host){var b=host.querySelector('[aria-pressed="true"]');return b?b.dataset.v:null;}
 function names(){return[$('n1').value.trim()||'Player 1',$('n2').value.trim()||'Player 2'];}
@@ -365,8 +373,6 @@ function applyFixture(fx){
   $('n1').value=fx.player1||'';$('n2').value=fx.player2||'';
   if(fx.color1){chosen.c1=fx.color1;}if(fx.color2){chosen.c2=fx.color2;}
   buildSwatches($('sw1'),'c1');buildSwatches($('sw2'),'c2');
-  if(fx.pointsToWin){$('pts').value=String(fx.pointsToWin);}
-  if(fx.bestOf){$('best').value=String(fx.bestOf);}
   refreshFirstServeLabels();
   banner('setupBanner','ok','Loaded: '+(fx.player1||'?')+' vs '+(fx.player2||'?')+'. Adjust below or start.');
   window.scrollTo(0,document.body.scrollHeight);
@@ -387,9 +393,9 @@ $('start').onclick=function(){
   var n=names();
   var cfg={
     players:[{name:n[0],color:chosen.c1},{name:n[1],color:chosen.c2}],
-    pointsToWin:parseInt($('pts').value,10),
-    winByTwo:pressedVal($('wbt'))==='1',
-    bestOf:parseInt($('best').value,10),
+    pointsToWin:15,
+    winByTwo:false,
+    bestOf:5,
     firstServer:parseInt(pressedVal($('firstServe')),10)
   };
   M=createMatch(cfg);
@@ -414,8 +420,14 @@ function renderScore(){
   $('gameNo').textContent=M.games.length+1;
   for(var i=0;i<2;i++){
     var sv=$('serve'+i);
-    if(M.server===i&&!M.over){sv.hidden=false;sv.firstChild.nodeValue=M.side;}
-    else sv.hidden=true;
+    if(M.server===i&&!M.over){
+      sv.classList.add('show');
+      sv.firstChild.nodeValue=M.side;
+      if(M.side==='R'){sv.style.right='14px';sv.style.left='auto';}
+      else{sv.style.left='14px';sv.style.right='auto';}
+    } else {
+      sv.classList.remove('show');
+    }
   }
   // detect game / match transition
   if(M.over){clearInterval(tick);goSummary();return;}
