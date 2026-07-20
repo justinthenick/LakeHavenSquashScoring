@@ -221,8 +221,8 @@
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
    ========================================================================== */
 var CONFIG = {
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwgoor0B851kNQwA45_xF8phxsXBHr1b2eA_teDEV9hFM0TK2spLIylwIUUsQDmWaCREw/exec",          // e.g. https://script.google.com/macros/s/AKfy.../exec
-  SHARED_SECRET:   "ivebeenchagned123"  // must match the SECRET in Code.gs
+  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec
+  SHARED_SECRET:   "change-me"  // must match the SECRET in Code.gs
 };
 
 /* ==========================================================================
@@ -271,23 +271,25 @@ function jsonp(url){
   });
 }
 
-function fetchFixtures(){
+function callApi(params){
   if(!scriptConfigured())return Promise.reject({reason:'unconfigured'});
-  var u=CONFIG.APPS_SCRIPT_URL+'?action=fixtures&secret='+encodeURIComponent(CONFIG.SHARED_SECRET);
-  return jsonp(u).then(function(d){
+  var qs='secret='+encodeURIComponent(CONFIG.SHARED_SECRET);
+  for(var k in params){if(params.hasOwnProperty(k))qs+='&'+k+'='+encodeURIComponent(params[k]);}
+  return jsonp(CONFIG.APPS_SCRIPT_URL+'?'+qs).then(function(d){
     if(!d||d.ok===false)throw{reason:'server',msg:(d&&d.error)||'rejected'};
-    return d.fixtures||[];
+    return d;
   });
 }
+
+function fetchFixtures(){
+  return callApi({action:'fixtures'}).then(function(d){return d.fixtures||[];});
+}
 function postResult(payload){
-  if(!scriptConfigured())return Promise.reject({reason:'unconfigured'});
-  payload.secret=CONFIG.SHARED_SECRET;
-  // body is a plain string => Content-Type text/plain => "simple request", no preflight.
-  // If the browser blocks reading the response, the write still lands; the server
-  // de-dupes by matchId so a queued retry can't create a duplicate.
-  return fetch(CONFIG.APPS_SCRIPT_URL,{method:'POST',body:JSON.stringify(payload)})
-    .then(function(r){return r.json();})
-    .then(function(d){if(!d||d.ok===false)throw{reason:'server',msg:(d&&d.error)||'rejected'};return d;});
+  // Send the whole result as one JSON param over JSONP, so the confirmation
+  // comes back without a CORS-blocked response. Server de-dupes by matchId,
+  // so a queued retry can never create a duplicate row.
+  var p={};for(var k in payload){if(payload.hasOwnProperty(k)&&k!=='secret')p[k]=payload[k];}
+  return callApi({action:'result',data:JSON.stringify(p)});
 }
 
 /* offline queue -------------------------------------------------------- */
