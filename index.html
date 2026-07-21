@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <link rel="icon" href="icon-192.png">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="theme-color" content="#1b2733">
@@ -94,8 +93,9 @@
   .footbar{display:flex;gap:10px;padding:6px 10px calc(10px + var(--safe-bot))}
   .footbar button{flex:1;padding:16px;border-radius:16px;background:var(--card);
     border:1px solid var(--line);font-weight:800;font-size:16px}
-  .footbar .clock{flex:1;background:transparent;border:none;color:var(--muted);
-    font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center;gap:6px}
+  .footbar .clocks{flex:1.2;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:2px;color:var(--muted);font-weight:700;font-size:13px;line-height:1.2}
+  .footbar .clocks b{color:var(--ink);font-size:16px;font-weight:900}
 
   /* ---------- between-games overlay ---------- */
   .overlay{position:fixed;inset:0;background:rgba(15,22,30,.72);display:none;
@@ -104,10 +104,7 @@
   .sheet{background:var(--card);border-radius:22px;padding:24px;width:100%;max-width:420px;text-align:center}
   .sheet h2{font-size:22px;margin-bottom:6px}
   .sheet p{color:var(--muted);margin:0 0 18px;font-weight:600}
-  .sidepick{display:flex;gap:12px;margin:16px 0}
-  .sidepick button{flex:1;padding:20px;border-radius:16px;border:2px solid var(--line);
-    background:#fff;font-size:20px;font-weight:900;color:var(--muted)}
-  .sidepick button[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:#fff}
+  .breakclock{font-size:30px;font-weight:900;color:var(--ink);margin:8px 0 20px;letter-spacing:.02em}
 
   /* ---------- summary table ---------- */
   .result-hero{display:flex;align-items:center;justify-content:center;gap:22px;margin:22px 0 10px}
@@ -130,6 +127,7 @@
     <div id="setupBanner"></div>
 
     <div class="eyebrow" style="margin-bottom:8px">From your sheet</div>
+    <input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
     <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
     <button class="cta ghost" id="reloadFx">Reload fixtures</button>
 
@@ -142,6 +140,11 @@
     <div class="swatches" id="sw2"></div>
 
     <div class="hint" style="margin-top:18px">Format: 15 points, best of 5, sudden death (no win-by-two).</div>
+
+    <div class="row" style="margin-top:6px">
+      <div><label class="field">Scorer</label><input id="scorer" placeholder="Scorer name" autocomplete="off"></div>
+      <div><label class="field">Referee</label><input id="ref" placeholder="Ref name" autocomplete="off"></div>
+    </div>
 
     <label class="field">First serve</label>
     <div class="toggle" id="firstServe">
@@ -177,7 +180,10 @@
   </div>
   <div class="footbar">
     <button id="undo">↶ Undo</button>
-    <span class="clock tnum">⏱ <span id="clock">00:00</span></span>
+    <div class="clocks tnum">
+      <span>Game <b id="gameClock">00:00</b></span>
+      <span>Match <b id="matchClock">00:00</b></span>
+    </div>
     <button id="flip">Swap box ⇄</button>
   </div>
 </section>
@@ -186,11 +192,8 @@
 <div class="overlay" id="gap">
   <div class="sheet">
     <h2 id="gapTitle">Game 1 to Player 1</h2>
-    <p id="gapSub">Player 1 serves next. Pick the starting box.</p>
-    <div class="sidepick" id="gapSide">
-      <button data-v="R" aria-pressed="true">Right</button>
-      <button data-v="L">Left</button>
-    </div>
+    <p id="gapSub">Next game — swap serve box on court if needed.</p>
+    <div class="breakclock tnum">Break&nbsp; <span id="breakClock">00:00</span></div>
     <button class="cta" id="gapGo">Start next game</button>
   </div>
 </div>
@@ -222,8 +225,8 @@
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
    ========================================================================== */
 var CONFIG = {
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwgoor0B851kNQwA45_xF8phxsXBHr1b2eA_teDEV9hFM0TK2spLIylwIUUsQDmWaCREw/exec",          // e.g. https://script.google.com/macros/s/AKfy.../exec
-  SHARED_SECRET:   "ivebeenchanged123"  // must match the SECRET in Code.gs
+  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec
+  SHARED_SECRET:   "change-me"  // must match the SECRET in Code.gs
 };
 
 /* ==========================================================================
@@ -312,7 +315,7 @@ function flushQueue(){
 var AKEY='cc_active';
 function makeMatchId(){var d=new Date();function p(n){return(n<10?'0':'')+n;}
   return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'-'+Math.random().toString(36).slice(2,5);}
-function persistActive(){if(!M)return;try{store.set(AKEY,JSON.stringify({M:M,elapsed:elapsed,fixture:activeFixture}));}catch(e){}}
+function persistActive(){if(!M)return;try{store.set(AKEY,JSON.stringify({M:M,fixture:activeFixture}));}catch(e){}}
 function clearActive(){store.del(AKEY);}
 function loadActive(){try{return JSON.parse(store.get(AKEY)||'null');}catch(e){return null;}}
 
@@ -322,7 +325,7 @@ function loadActive(){try{return JSON.parse(store.get(AKEY)||'null');}catch(e){r
 var PALETTE=['#e6913c','#5aa1e0','#e58ca0','#79c4ac','#6b52ae','#8a94a3',
              '#ffffff','#b268d4','#3f6b46','#3a536e','#d9b13b','#111111'];
 var chosen={c1:'#e6913c',c2:'#6b52ae'};
-var M=null, activeFixture=null, tick=null, elapsed=0;
+var M=null, activeFixture=null, tick=null;
 
 function $(id){return document.getElementById(id);}
 function show(scr){['setup','score','summary'].forEach(function(s){$(s).classList.toggle('active',s===scr);});}
@@ -357,12 +360,26 @@ function refreshFirstServeLabels(){var n=names();$('fs1').textContent=n[0];$('fs
 $('n1').oninput=refreshFirstServeLabels;$('n2').oninput=refreshFirstServeLabels;
 
 /* fixtures list */
-function renderFixtures(list){
-  var host=$('fixtures');host.innerHTML='';
-  if(!list.length){host.innerHTML='<div class="hint">No fixtures found in the sheet.</div>';return;}
+var allFixtures=[];
+function renderFixtures(list){allFixtures=list;applyFixtureFilter();}
+function applyFixtureFilter(){
+  var q=($('fxSearch').value||'').trim().toLowerCase();
+  var today=localDate();
+  var shown,note='';
+  if(q){
+    shown=allFixtures.filter(function(f){return ((f.player1||'')+' '+(f.player2||'')).toLowerCase().indexOf(q)>-1;});
+  } else {
+    shown=allFixtures.filter(function(f){return String(f.scheduled||'')===today;});
+    if(!shown.length&&allFixtures.length){shown=allFixtures;note='None scheduled today — showing all.';}
+  }
+  drawFixtures(shown,note);
+}
+function drawFixtures(list,note){
+  var host=$('fixtures');host.innerHTML=note?('<div class="hint">'+esc(note)+'</div>'):'';
+  if(!list.length){host.innerHTML+='<div class="hint">No matching fixtures.</div>';return;}
   list.forEach(function(fx){
     var b=document.createElement('button');b.className='fx';
-    var meta=[fx.event,fx.venue].filter(Boolean).join(' · ');
+    var meta=[fx.scheduled].filter(Boolean).join(' · ');
     b.innerHTML='<span>'+esc(fx.player1||'?')+' vs '+esc(fx.player2||'?')+
       (meta?'<small>'+esc(meta)+'</small>':'')+'</span><span>›</span>';
     b.onclick=function(){applyFixture(fx);};
@@ -390,6 +407,7 @@ function loadFixtures(){
   });
 }
 $('reloadFx').onclick=loadFixtures;
+$('fxSearch').oninput=applyFixtureFilter;
 
 /* ---- start match ---- */
 $('start').onclick=function(){
@@ -403,20 +421,44 @@ $('start').onclick=function(){
   };
   M=createMatch(cfg);
   M.matchId=makeMatchId();
+  M.officials={scorer:($('scorer').value||'').trim(),ref:($('ref').value||'').trim()};
+  M.timing={matchSec:0,gameSec:0,breakSec:0,breakActive:false,
+    games:[{startTs:clockNow(),endTs:'',durationSec:0,breakBeforeSec:0}]};
   applyMatchChrome(cfg);
-  elapsed=0;startClock();renderScore();show('score');
+  startTimers();renderScore();show('score');
 };
 function isLight(hex){var c=hex.replace('#','');if(c.length===3)c=c.replace(/./g,'$&$&');
   var r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),b=parseInt(c.substr(4,2),16);
   return (0.299*r+0.587*g+0.114*b)>186;}
 
-/* ---- clock ---- */
-function startClock(){clearInterval(tick);tick=setInterval(function(){elapsed++;paintClock();},1000);paintClock();}
-function paintClock(){var m=Math.floor(elapsed/60),s=elapsed%60;$('clock').textContent=(m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
+/* ---- timers (accumulators; a clock only advances while it is running) ---- */
+function fmtT(sec){var m=Math.floor(sec/60),s=sec%60;return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
+function clockNow(){var d=new Date();function p(n){return(n<10?'0':'')+n;}return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
+function localDate(){var d=new Date();function p(n){return(n<10?'0':'')+n;}return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());}
+function startTimers(){clearInterval(tick);tick=setInterval(tickTimers,1000);paintTimers();}
+function tickTimers(){
+  if(!M||M.over)return;var t=M.timing;
+  t.matchSec++;
+  if(t.breakActive)t.breakSec++;else t.gameSec++;
+  paintTimers();
+}
+function paintTimers(){
+  if(!M||!M.timing)return;var t=M.timing;
+  $('gameClock').textContent=fmtT(t.gameSec);
+  $('matchClock').textContent=fmtT(t.matchSec);
+  $('breakClock').textContent=fmtT(t.breakSec);
+}
 
 /* ---- render score screen ---- */
 var lastGames=0;
 function renderScore(){
+  // a game just completed -> stamp its end/duration, open the break
+  if(M.games.length>lastGames){
+    var gi=M.games.length-1,gt=M.timing.games[gi];
+    if(gt&&!gt.endTs){gt.endTs=clockNow();gt.durationSec=M.timing.gameSec;}
+    lastGames=M.games.length;
+    if(!M.over){M.timing.breakActive=true;M.timing.breakSec=0;openGap();}
+  }
   persistActive();
   $('pts0').textContent=M.points[0];$('pts1').textContent=M.points[1];
   var gs=matchGamesScore(M);$('gamesLine').textContent=gs[0]+'–'+gs[1];
@@ -432,10 +474,8 @@ function renderScore(){
       sv.classList.remove('show');
     }
   }
-  // detect game / match transition
+  paintTimers();
   if(M.over){clearInterval(tick);goSummary();return;}
-  if(M.games.length>lastGames){openGap();}
-  lastGames=M.games.length;
 }
 function tap(i){wonRally(M,i);renderScore();}
 $('panel0').onclick=function(){tap(0);};
@@ -448,45 +488,52 @@ $('serve0').onclick=function(ev){ev.stopPropagation();toggleSide(M);renderScore(
 $('serve1').onclick=function(ev){ev.stopPropagation();toggleSide(M);renderScore();};
 $('exit').onclick=function(){if(confirm('Exit match without saving?')){clearInterval(tick);show('setup');}};
 
-/* ---- between games overlay ---- */
-var gapSide='R';
+/* ---- between games overlay (shows the running break timer) ---- */
 function openGap(){
   var last=M.games[M.games.length-1];
   $('gapTitle').textContent='Game '+M.games.length+' to '+M.config.players[last.winner].name+
     ' ('+last.points[0]+'–'+last.points[1]+')';
-  $('gapSub').textContent=M.config.players[M.server].name+' serves next. Pick the starting box.';
-  gapSide=M.side;
-  [].slice.call($('gapSide').children).forEach(function(b){b.setAttribute('aria-pressed',b.dataset.v===gapSide?'true':'false');});
+  $('gapSub').textContent=M.config.players[M.server].name+' serves next — swap box on court if needed.';
+  paintTimers();
   $('gap').classList.add('active');
 }
-[].slice.call($('gapSide').children).forEach(function(b){
-  b.onclick=function(){gapSide=b.dataset.v;[].slice.call($('gapSide').children).forEach(function(x){x.setAttribute('aria-pressed','false');});b.setAttribute('aria-pressed','true');};
-});
-$('gapGo').onclick=function(){if(M.side!==gapSide)M.side=gapSide;$('gap').classList.remove('active');renderScore();};
+$('gapGo').onclick=function(){
+  var ni=M.games.length; // index of the upcoming game
+  M.timing.breakActive=false;
+  M.timing.games[ni]={startTs:clockNow(),endTs:'',durationSec:0,breakBeforeSec:M.timing.breakSec};
+  M.timing.gameSec=0;
+  $('gap').classList.remove('active');
+  renderScore();
+};
 
 /* ==========================================================================
    6. SUMMARY + SAVE
    ========================================================================== */
 function buildPayload(){
-  var gs=matchGamesScore(M);var n=M.config.players;
+  var gs=matchGamesScore(M);var n=M.config.players;var T=M.timing;
   var lineParts=M.games.map(function(g){return g.points[0]+'-'+g.points[1];});
   return{
     action:'result',
     matchId:M.matchId,
     fixtureId:activeFixture?activeFixture.id:'',
-    date:new Date().toISOString().slice(0,10),
+    date:localDate(),
     player1:n[0].name,player2:n[1].name,
     color1:n[0].color,color2:n[1].color,
     event:activeFixture?activeFixture.event||'':'',
     venue:activeFixture?activeFixture.venue||'':'',
-    games:M.games.map(function(g){return{p1:g.points[0],p2:g.points[1],winner:g.winner+1};}),
+    scorer:M.officials?M.officials.scorer:'',
+    ref:M.officials?M.officials.ref:'',
+    games:M.games.map(function(g,i){var t=T.games[i]||{};
+      return{p1:g.points[0],p2:g.points[1],winner:g.winner+1,
+        timeStart:t.startTs||'',timeEnd:t.endTs||'',
+        duration:t.durationSec||0,breakTime:t.breakBeforeSec||0};}),
     scoreLine:gs[0]+'-'+gs[1]+' ('+lineParts.join(', ')+')',
     gamesP1:gs[0],gamesP2:gs[1],
     pointsP1:M.games.reduce(function(a,g){return a+g.points[0];},0),
     pointsP2:M.games.reduce(function(a,g){return a+g.points[1];},0),
     winner:(M.matchWinner!=null?n[M.matchWinner].name:''),
     winnerIndex:(M.matchWinner!=null?M.matchWinner+1:0),
-    durationSec:elapsed
+    durationSec:T.matchSec
   };
 }
 var pendingPayload=null;
@@ -536,9 +583,12 @@ function applyMatchChrome(cfg){
   $('targetLine').textContent=cfg.pointsToWin;
 }
 function resumeMatch(saved){
-  M=saved.M;elapsed=saved.elapsed||0;activeFixture=saved.fixture||null;
+  M=saved.M;activeFixture=saved.fixture||null;
+  if(!M.timing)M.timing={matchSec:0,gameSec:0,breakSec:0,breakActive:false,
+    games:[{startTs:clockNow(),endTs:'',durationSec:0,breakBeforeSec:0}]};
   applyMatchChrome(M.config);lastGames=M.games.length;
-  if(M.over){goSummary();}else{startClock();renderScore();show('score');}
+  if(M.over){goSummary();}
+  else{startTimers();renderScore();show('score');if(M.timing.breakActive)openGap();}
 }
 function showResume(saved){
   var m=saved.M,n=m.config.players,gs=[0,0];
