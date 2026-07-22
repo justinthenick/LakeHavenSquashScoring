@@ -47,6 +47,8 @@
   .row{display:flex;gap:12px}
   .row>*{flex:1}
   .swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+  .subrow{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;font-weight:700;color:var(--muted)}
+  .subrow input{width:auto;flex:none}
   .sw{width:44px;height:44px;border-radius:12px;border:3px solid transparent;position:relative}
   .sw[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 3px #fff inset}
   .cta{display:block;width:100%;padding:18px;margin-top:24px;border-radius:16px;
@@ -134,9 +136,11 @@
     <div class="eyebrow" style="margin:22px 0 0">Or enter manually</div>
     <label class="field">Player 1</label>
     <input id="n1" placeholder="Player 1" autocomplete="off">
+    <label class="subrow"><input type="checkbox" id="sub1"> Substitute — the name above is a fill-in</label>
     <div class="swatches" id="sw1"></div>
     <label class="field">Player 2</label>
     <input id="n2" placeholder="Player 2" autocomplete="off">
+    <label class="subrow"><input type="checkbox" id="sub2"> Substitute — the name above is a fill-in</label>
     <div class="swatches" id="sw2"></div>
 
     <div class="hint" style="margin-top:18px">Format: 15 points, best of 5, sudden death (no win-by-two).</div>
@@ -225,8 +229,8 @@
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
    ========================================================================== */
 var CONFIG = {
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwgoor0B851kNQwA45_xF8phxsXBHr1b2eA_teDEV9hFM0TK2spLIylwIUUsQDmWaCREw/exec",          // e.g. https://script.google.com/macros/s/AKfy.../exec
-  SHARED_SECRET:   "ivebeenchanged123"  // must match the SECRET in Code.gs
+  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec
+  SHARED_SECRET:   "change-me"  // must match the SECRET in Code.gs
 };
 
 /* ==========================================================================
@@ -325,6 +329,7 @@ function loadActive(){try{return JSON.parse(store.get(AKEY)||'null');}catch(e){r
 var PALETTE=['#e6913c','#5aa1e0','#e58ca0','#79c4ac','#6b52ae','#8a94a3',
              '#ffffff','#b268d4','#3f6b46','#3a536e','#d9b13b','#111111'];
 var chosen={c1:'#e6913c',c2:'#6b52ae'};
+var plannedNames=['',''];   // original fixture names, for sub tracking
 var M=null, activeFixture=null, tick=null;
 
 function $(id){return document.getElementById(id);}
@@ -379,7 +384,11 @@ function drawFixtures(list,note){
   if(!list.length){host.innerHTML+='<div class="hint">No matching fixtures.</div>';return;}
   list.forEach(function(fx){
     var b=document.createElement('button');b.className='fx';
-    var meta=[fx.scheduled].filter(Boolean).join(' · ');
+    var bits=[];
+    if(fx.scheduled)bits.push(fx.scheduled);
+    if(fx.round)bits.push('R'+fx.round+(fx.line?' L'+fx.line:''));
+    if(fx.team1&&fx.team2)bits.push(fx.team1+' v '+fx.team2);
+    var meta=bits.join(' · ');
     b.innerHTML='<span>'+esc(fx.player1||'?')+' vs '+esc(fx.player2||'?')+
       (meta?'<small>'+esc(meta)+'</small>':'')+'</span><span>›</span>';
     b.onclick=function(){applyFixture(fx);};
@@ -391,6 +400,8 @@ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;
 function applyFixture(fx){
   activeFixture=fx;
   $('n1').value=fx.player1||'';$('n2').value=fx.player2||'';
+  plannedNames=[fx.player1||'',fx.player2||''];
+  $('sub1').checked=false;$('sub2').checked=false;
   if(fx.color1){chosen.c1=fx.color1;}if(fx.color2){chosen.c2=fx.color2;}
   buildSwatches($('sw1'),'c1');buildSwatches($('sw2'),'c2');
   refreshFirstServeLabels();
@@ -422,6 +433,8 @@ $('start').onclick=function(){
   M=createMatch(cfg);
   M.matchId=makeMatchId();
   M.officials={scorer:($('scorer').value||'').trim(),ref:($('ref').value||'').trim()};
+  M.planned=[plannedNames[0],plannedNames[1]];
+  M.subs=[$('sub1').checked,$('sub2').checked];
   M.timing={matchSec:0,gameSec:0,breakSec:0,breakActive:false,
     games:[{startTs:clockNow(),endTs:'',durationSec:0,breakBeforeSec:0}]};
   applyMatchChrome(cfg);
@@ -523,6 +536,8 @@ function buildPayload(){
     venue:activeFixture?activeFixture.venue||'':'',
     scorer:M.officials?M.officials.scorer:'',
     ref:M.officials?M.officials.ref:'',
+    planned1:M.planned?M.planned[0]:'',planned2:M.planned?M.planned[1]:'',
+    sub1:M.subs?!!M.subs[0]:false,sub2:M.subs?!!M.subs[1]:false,
     games:M.games.map(function(g,i){var t=T.games[i]||{};
       return{p1:g.points[0],p2:g.points[1],winner:g.winner+1,
         timeStart:t.startTs||'',timeEnd:t.endTs||'',
@@ -568,6 +583,7 @@ $('save').onclick=function(){
   });
 };
 $('again').onclick=function(){M=null;activeFixture=null;lastGames=0;clearActive();
+  plannedNames=['',''];if($('sub1'))$('sub1').checked=false;if($('sub2'))$('sub2').checked=false;
   banner('setupBanner','',null);show('setup');loadFixtures();};
 
 /* ==========================================================================
@@ -579,7 +595,8 @@ function applyMatchChrome(cfg){
   $('panel0').style.background='var(--p1)';$('panel1').style.background='var(--p2)';
   $('panel0').style.color=isLight(cfg.players[0].color)?'#14202b':'#fff';
   $('panel1').style.color=isLight(cfg.players[1].color)?'#14202b':'#fff';
-  $('name0').textContent=cfg.players[0].name;$('name1').textContent=cfg.players[1].name;
+  $('name0').textContent=cfg.players[0].name+((M&&M.subs&&M.subs[0])?' (sub)':'');
+  $('name1').textContent=cfg.players[1].name+((M&&M.subs&&M.subs[1])?' (sub)':'');
   $('targetLine').textContent=cfg.pointsToWin;
 }
 function resumeMatch(saved){
