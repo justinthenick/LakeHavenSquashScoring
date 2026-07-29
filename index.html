@@ -76,6 +76,8 @@
     padding:calc(10px + var(--safe-top)) 16px 8px}
   .scorehead .game{font-size:15px;font-weight:800}
   .scorehead .game b{color:var(--ink)}
+  .hname{display:none;font-weight:800;font-size:15px;max-width:24vw;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .exit{color:var(--danger);font-weight:800;font-size:15px;padding:6px 8px}
   .arena{flex:1;display:flex;gap:10px;padding:6px 10px 8px;min-height:0}
   .panel{flex:1;border-radius:22px;position:relative;display:flex;flex-direction:column;
@@ -93,7 +95,7 @@
     background:rgba(20,20,28,.34);display:none;align-items:center;justify-content:center;
     font-size:21px;font-weight:900;border:2px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.3)}
   .serve.show{display:flex}
-  .serve.left{align-self:flex-start} .serve.right{align-self:flex-end}
+  .serve.left{margin-right:auto} .serve.right{margin-left:auto}
   .serve small{font-size:9px;position:absolute;bottom:5px;letter-spacing:.1em}
   .serve::after{content:'⇄';position:absolute;top:2px;right:5px;font-size:11px;opacity:.9;font-weight:800}
   .msgbar{height:48px;display:flex;align-items:center;justify-content:center;padding:2px 12px 0;flex:none}
@@ -113,12 +115,14 @@
   .histrow .hs{color:var(--muted);font-size:12px}
   .histrow .hw{font-weight:800}
   @media (orientation:landscape) and (max-height:600px){
-    .panel{padding:8px 10px 6px}
-    .panel .pname{font-size:14px}
-    .serveslot{height:44px}
-    .serve{width:42px;height:42px;font-size:17px}
+    .hname{display:block}
+    .panel .pname{display:none}
+    .panel{padding:6px 10px 6px}
+    .serveslot{height:46px}
+    .serve{width:48px;height:48px;font-size:22px}
+    .serve small{display:none}
     .serve::after{display:none}
-    .panel .pts{font-size:min(34vh,30vw,150px)}
+    .panel .pts{font-size:min(40vh,28vw,170px);padding-bottom:12px}
     .panel .tapcue{display:none}
     .scorehead{padding:calc(4px + var(--safe-top)) 14px 2px}
     .msgbar{height:34px;padding-top:0}
@@ -210,7 +214,9 @@
 <section id="score" class="screen">
   <div class="scorehead">
     <button class="exit" id="exit">Exit</button>
+    <span class="hname" id="hname0"></span>
     <div class="game">Game <b id="gameNo">1</b> · <span id="gamesLine" class="tnum">0–0</span> · to <span id="targetLine">15</span></div>
+    <span class="hname" id="hname1"></span>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
   <div class="msgbar"><span id="msg" class="msg"></span></div>
@@ -719,6 +725,10 @@ function applyMatchChrome(cfg){
   $('panel1').style.color=isLight(cfg.players[1].color)?'#14202b':'#fff';
   $('name0').textContent=cfg.players[0].name+((M&&M.subs&&M.subs[0])?' (sub)':'');
   $('name1').textContent=cfg.players[1].name+((M&&M.subs&&M.subs[1])?' (sub)':'');
+  $('hname0').textContent=cfg.players[0].name;
+  $('hname1').textContent=cfg.players[1].name;
+  $('hname0').style.color='var(--p1)';
+  $('hname1').style.color='var(--p2)';
   $('targetLine').textContent=cfg.pointsToWin;
 }
 function resumeMatch(saved){
