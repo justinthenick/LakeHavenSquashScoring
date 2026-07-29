@@ -88,12 +88,33 @@
   .panel .pts{font-size:clamp(96px,34vw,190px);font-weight:900;line-height:.9;letter-spacing:-.04em}
   .panel .tapcue{position:absolute;bottom:18px;font-size:12px;font-weight:800;
     letter-spacing:.12em;text-transform:uppercase;opacity:.72}
-  .serve{position:absolute;top:14px;width:52px;height:52px;border-radius:14px;
-    background:rgba(255,255,255,.22);display:none;align-items:center;justify-content:center;
-    font-size:22px;font-weight:900;border:2px solid rgba(255,255,255,.6);
+  .serve{position:absolute;top:14px;width:54px;height:54px;border-radius:14px;
+    background:rgba(20,20,28,.34);display:none;align-items:center;justify-content:center;
+    font-size:22px;font-weight:900;border:2px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.3);
     transition:left .12s ease,right .12s ease}
   .serve.show{display:flex}
   .serve small{font-size:9px;position:absolute;bottom:5px;letter-spacing:.1em}
+  .serve::after{content:'⇄';position:absolute;top:2px;right:5px;font-size:11px;opacity:.9;font-weight:800}
+  .handout{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.9);
+    background:var(--ink);color:#fff;padding:11px 22px;border-radius:999px;font-weight:900;
+    letter-spacing:.08em;font-size:17px;opacity:0;pointer-events:none;z-index:15;
+    box-shadow:0 6px 24px rgba(0,0,0,.35);transition:opacity .15s ease,transform .15s ease;white-space:nowrap}
+  .handout.show{opacity:.96;transform:translate(-50%,-50%) scale(1)}
+  .histrow{display:grid;grid-template-columns:30px 62px 1fr auto;gap:8px;align-items:center;
+    padding:9px 4px;border-bottom:1px solid var(--line);font-size:14px}
+  .histrow .hn{color:var(--muted);font-weight:700}
+  .histrow .hsc{font-weight:900}
+  .histrow .hs{color:var(--muted);font-size:12px}
+  .histrow .hw{font-weight:800}
+  @media (orientation:landscape) and (max-height:520px){
+    .panel .pts{font-size:min(30vh,120px)}
+    .panel .pname{font-size:14px;top:8px}
+    .panel .tapcue{bottom:8px;font-size:10px}
+    .serve{width:42px;height:42px;font-size:17px;top:8px}
+    .serve::after{display:none}
+    .arena{gap:8px;padding:4px 8px 6px}
+    .footbar button{padding:12px;font-size:14px}
+  }
   .footbar{display:flex;gap:10px;padding:6px 10px calc(10px + var(--safe-bot))}
   .footbar button{flex:1;padding:16px;border-radius:16px;background:var(--card);
     border:1px solid var(--line);font-weight:800;font-size:16px}
@@ -142,7 +163,6 @@
     <input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
     <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
     <button class="cta ghost" id="reloadFx">Reload fixtures</button>
-    <button class="cta ghost" id="sheetSettings" style="margin-top:8px">Sheet settings</button>
 
     <div class="eyebrow" style="margin:22px 0 0">Or enter manually</div>
     <label class="field">Player 1</label>
@@ -177,8 +197,9 @@
   <div class="scorehead">
     <button class="exit" id="exit">Exit</button>
     <div class="game">Game <b id="gameNo">1</b> · <span id="gamesLine" class="tnum">0–0</span> · to <span id="targetLine">15</span></div>
-    <span style="width:44px"></span>
+    <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
+  <div id="handout" class="handout">HAND-OUT</div>
   <div class="arena">
     <button class="panel" id="panel0">
       <span class="pname" id="name0">Player 1</span>
@@ -200,6 +221,15 @@
       <span>Match <b id="matchClock">00:00</b></span>
     </div>
     <button id="flip">Swap box ⇄</button>
+  </div>
+  <div class="overlay" id="histDrawer">
+    <div class="sheet" style="max-width:460px;text-align:left;max-height:82vh;overflow:auto;padding:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h2 style="margin:0">Score history</h2>
+        <button class="exit" id="histClose" style="color:var(--ink)">Close ✕</button>
+      </div>
+      <div id="histBody"></div>
+    </div>
   </div>
 </section>
 
@@ -240,8 +270,8 @@
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
    ========================================================================== */
 var CONFIG = {
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwgoor0B851kNQwA45_xF8phxsXBHr1b2eA_teDEV9hFM0TK2spLIylwIUUsQDmWaCREw/exec",          // e.g. https://script.google.com/macros/s/AKfy.../exec  ← paste on each deploy
-  SHARED_SECRET:   "ivebeenchanged123"  // must match the SECRET in Code.gs
+  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec  ← paste on each deploy
+  SHARED_SECRET:   "change-me"  // must match the SECRET in Code.gs
 };
 // The hardcoded values above win. A saved value only fills a BLANK, so markers never
 // have to enter anything once the file is configured; the prompt is just a fallback.
@@ -460,7 +490,6 @@ function loadFixtures(){
   });
 }
 $('reloadFx').onclick=loadFixtures;
-$('sheetSettings').onclick=openSettings;
 $('fxSearch').oninput=applyFixtureFilter;
 $('fxDate').onchange=applyFixtureFilter;
 $('fxComp').onchange=applyFixtureFilter;
@@ -537,7 +566,34 @@ function renderScore(){
   paintTimers();
   if(M.over){clearInterval(tick);goSummary();return;}
 }
-function tap(i){wonRally(M,i);renderScore();}
+var handoutTimer=null;
+function flashHandout(newServer){
+  var el=$('handout'); if(!el)return;
+  var nm=(M.config.players[newServer].name||'').split(' ')[0];
+  el.textContent='HAND-OUT · '+nm+' to serve';
+  el.classList.add('show');
+  clearTimeout(handoutTimer);
+  handoutTimer=setTimeout(function(){el.classList.remove('show');},1400);
+}
+function tap(i){
+  var prevServer=M.server, prevGames=M.games.length;
+  wonRally(M,i);
+  renderScore();
+  if(!M.over && M.games.length===prevGames && M.server!==prevServer){ flashHandout(M.server); }
+}
+function openHistory(){
+  var pl=M.config.players;
+  var rows=(M.log||[]).map(function(e,idx){
+    var srv=(pl[e.server].name||'').split(' ')[0];
+    var w=(pl[e.winner].name||'').split(' ')[0];
+    return '<div class="histrow"><span class="hn">'+(idx+1)+'</span>'+
+      '<span class="hsc tnum">'+e.score[0]+'–'+e.score[1]+'</span>'+
+      '<span class="hs">'+esc(srv)+' served '+e.side+'</span>'+
+      '<span class="hw">'+esc(w)+'</span></div>';
+  }).reverse().join('');
+  $('histBody').innerHTML=rows||'<div class="hint">No rallies scored yet.</div>';
+  $('histDrawer').classList.add('active');
+}
 $('panel0').onclick=function(){tap(0);};
 $('panel1').onclick=function(){tap(1);};
 $('undo').onclick=function(){undo(M);
@@ -546,6 +602,9 @@ $('undo').onclick=function(){undo(M);
 $('flip').onclick=function(){toggleSide(M);renderScore();};
 $('serve0').onclick=function(ev){ev.stopPropagation();toggleSide(M);renderScore();};
 $('serve1').onclick=function(ev){ev.stopPropagation();toggleSide(M);renderScore();};
+$('histBtn').onclick=openHistory;
+$('histClose').onclick=function(){$('histDrawer').classList.remove('active');};
+$('histDrawer').onclick=function(ev){if(ev.target===$('histDrawer'))$('histDrawer').classList.remove('active');};
 $('exit').onclick=function(){if(confirm('Exit match without saving?')){clearInterval(tick);show('setup');}};
 
 /* ---- between games overlay (shows the running break timer) ---- */
