@@ -60,6 +60,8 @@
   .toggle button[aria-pressed="true"]{background:var(--ink);color:#fff}
   .hint{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.4}
   .fixtures{margin-top:8px;display:flex;flex-direction:column;gap:10px}
+  .fxrow{display:flex;gap:8px;margin-bottom:8px}
+  .fxrow>*{flex:1;min-width:0}
   .fx{display:flex;justify-content:space-between;align-items:center;padding:16px;
     background:#fff;border:1px solid var(--line);border-radius:14px;text-align:left;font-weight:700}
   .fx small{display:block;color:var(--muted);font-weight:600;margin-top:3px}
@@ -129,6 +131,14 @@
     <div id="setupBanner"></div>
 
     <div class="eyebrow" style="margin-bottom:8px">From your sheet</div>
+    <div class="fxrow">
+      <input type="date" id="fxDate" aria-label="Date">
+      <select id="fxComp"><option value="">All comps</option></select>
+    </div>
+    <div class="fxrow">
+      <select id="fxTeam"><option value="">All teams</option></select>
+      <select id="fxLine"><option value="">All lines</option><option value="1">Line 1</option><option value="2">Line 2</option><option value="3">Line 3</option><option value="4">Line 4</option><option value="5">Line 5</option></select>
+    </div>
     <input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
     <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
     <button class="cta ghost" id="reloadFx">Reload fixtures</button>
@@ -229,8 +239,8 @@
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
    ========================================================================== */
 var CONFIG = {
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwgoor0B851kNQwA45_xF8phxsXBHr1b2eA_teDEV9hFM0TK2spLIylwIUUsQDmWaCREw/exec",          // e.g. https://script.google.com/macros/s/AKfy.../exec
-  SHARED_SECRET:   "ivebeenchanged123"  // must match the SECRET in Code.gs
+  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec
+  SHARED_SECRET:   "change-me"  // must match the SECRET in Code.gs
 };
 
 /* ==========================================================================
@@ -366,17 +376,30 @@ $('n1').oninput=refreshFirstServeLabels;$('n2').oninput=refreshFirstServeLabels;
 
 /* fixtures list */
 var allFixtures=[];
-function renderFixtures(list){allFixtures=list;applyFixtureFilter();}
+function renderFixtures(list){allFixtures=list; if(!$('fxDate').value)$('fxDate').value=localDate(); applyFixtureFilter();}
+function uniqSorted(arr){var s={};arr.forEach(function(x){if(x!=null&&x!=='')s[String(x)]=1;});return Object.keys(s).sort();}
+function syncSelect(id,allLabel,values){
+  var sel=$(id),cur=sel.value;
+  sel.innerHTML='<option value="">'+allLabel+'</option>'+values.map(function(v){return '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(v)+'</option>';}).join('');
+  if(cur&&values.indexOf(cur)<0)sel.value='';
+}
 function applyFixtureFilter(){
-  var q=($('fxSearch').value||'').trim().toLowerCase();
-  var today=localDate();
-  var shown,note='';
-  if(q){
-    shown=allFixtures.filter(function(f){return ((f.player1||'')+' '+(f.player2||'')).toLowerCase().indexOf(q)>-1;});
-  } else {
-    shown=allFixtures.filter(function(f){return String(f.scheduled||'')===today;});
-    if(!shown.length&&allFixtures.length){shown=allFixtures;note='None scheduled today — showing all.';}
-  }
+  var date=$('fxDate').value||localDate();
+  var onDate=allFixtures.filter(function(f){return String(f.scheduled||'')===date;});
+  // populate comp + team options from this date (preserve a still-valid selection)
+  syncSelect('fxComp','All comps',uniqSorted(onDate.map(function(f){return f.comp;})));
+  var teams=[];onDate.forEach(function(f){if(f.team1)teams.push(f.team1);if(f.team2)teams.push(f.team2);});
+  syncSelect('fxTeam','All teams',uniqSorted(teams));
+  var comp=$('fxComp').value, team=$('fxTeam').value, line=$('fxLine').value, q=($('fxSearch').value||'').trim().toLowerCase();
+  var shown=onDate.filter(function(f){
+    if(comp&&String(f.comp||'')!==comp)return false;
+    if(team&&f.team1!==team&&f.team2!==team)return false;
+    if(line&&String(f.line||'')!==String(line))return false;
+    if(q&&(((f.player1||'')+' '+(f.player2||'')).toLowerCase().indexOf(q)<0))return false;
+    return true;
+  });
+  var note='';
+  if(allFixtures.length && !onDate.length) note='No fixtures on '+date+'. Pick another date above.';
   drawFixtures(shown,note);
 }
 function drawFixtures(list,note){
@@ -419,6 +442,10 @@ function loadFixtures(){
 }
 $('reloadFx').onclick=loadFixtures;
 $('fxSearch').oninput=applyFixtureFilter;
+$('fxDate').onchange=applyFixtureFilter;
+$('fxComp').onchange=applyFixtureFilter;
+$('fxTeam').onchange=applyFixtureFilter;
+$('fxLine').onchange=applyFixtureFilter;
 
 /* ---- start match ---- */
 $('start').onclick=function(){
