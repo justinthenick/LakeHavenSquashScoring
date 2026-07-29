@@ -95,11 +95,16 @@
   .serve.show{display:flex}
   .serve small{font-size:9px;position:absolute;bottom:5px;letter-spacing:.1em}
   .serve::after{content:'⇄';position:absolute;top:2px;right:5px;font-size:11px;opacity:.9;font-weight:800}
-  .handout{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.9);
-    background:var(--ink);color:#fff;padding:11px 22px;border-radius:999px;font-weight:900;
-    letter-spacing:.08em;font-size:17px;opacity:0;pointer-events:none;z-index:15;
-    box-shadow:0 6px 24px rgba(0,0,0,.35);transition:opacity .15s ease,transform .15s ease;white-space:nowrap}
-  .handout.show{opacity:.96;transform:translate(-50%,-50%) scale(1)}
+  .msgbar{height:48px;display:flex;align-items:center;justify-content:center;padding:2px 12px 0;flex:none}
+  .msg{opacity:0;transform:translateY(-5px);transition:opacity .18s ease,transform .18s ease;
+    font-weight:800;font-size:15px;letter-spacing:.01em;padding:8px 18px;border-radius:999px;
+    background:#fff;color:var(--muted);border:1px solid var(--line);white-space:nowrap;
+    box-shadow:0 2px 8px rgba(0,0,0,.06)}
+  .msg.show{opacity:1;transform:none}
+  .msg.point{color:var(--muted)}
+  .msg.handout{background:#efeafc;color:#5340a8;border-color:#dcd2f6}
+  .msg.game{background:#dff2e5;color:#1c6b3d;border-color:#bfe6cd}
+  .msg.match{background:var(--ink);color:#fff;border-color:var(--ink);box-shadow:0 4px 16px rgba(0,0,0,.22)}
   .histrow{display:grid;grid-template-columns:30px 62px 1fr auto;gap:8px;align-items:center;
     padding:9px 4px;border-bottom:1px solid var(--line);font-size:14px}
   .histrow .hn{color:var(--muted);font-weight:700}
@@ -112,8 +117,14 @@
     .panel .tapcue{bottom:8px;font-size:10px}
     .serve{width:42px;height:42px;font-size:17px;top:8px}
     .serve::after{display:none}
-    .arena{gap:8px;padding:4px 8px 6px}
-    .footbar button{padding:12px;font-size:14px}
+    .arena{gap:8px;padding:2px 8px 4px}
+    .scorehead{padding:calc(4px + var(--safe-top)) 14px 2px}
+    .msgbar{height:38px;padding-top:0}
+    .msg{font-size:13px;padding:6px 14px}
+    .footbar{padding:4px 8px calc(4px + var(--safe-bot))}
+    .footbar button{padding:9px;font-size:13px;border-radius:12px}
+    .footbar .clocks{font-size:11px}
+    .footbar .clocks b{font-size:13px}
   }
   .footbar{display:flex;gap:10px;padding:6px 10px calc(10px + var(--safe-bot))}
   .footbar button{flex:1;padding:16px;border-radius:16px;background:var(--card);
@@ -199,7 +210,7 @@
     <div class="game">Game <b id="gameNo">1</b> · <span id="gamesLine" class="tnum">0–0</span> · to <span id="targetLine">15</span></div>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
-  <div id="handout" class="handout">HAND-OUT</div>
+  <div class="msgbar"><span id="msg" class="msg"></span></div>
   <div class="arena">
     <button class="panel" id="panel0">
       <span class="pname" id="name0">Player 1</span>
@@ -566,20 +577,24 @@ function renderScore(){
   paintTimers();
   if(M.over){clearInterval(tick);goSummary();return;}
 }
-var handoutTimer=null;
-function flashHandout(newServer){
-  var el=$('handout'); if(!el)return;
-  var nm=(M.config.players[newServer].name||'').split(' ')[0];
-  el.textContent='HAND-OUT · '+nm+' to serve';
+var msgTimer=null;
+function firstName(idx){return (M.config.players[idx].name||'').split(' ')[0];}
+function flashMsg(text,cls,ms){
+  var el=$('msg'); if(!el)return;
+  el.className='msg '+cls; el.textContent=text;
+  void el.offsetWidth;                       // restart the transition
   el.classList.add('show');
-  clearTimeout(handoutTimer);
-  handoutTimer=setTimeout(function(){el.classList.remove('show');},1400);
+  clearTimeout(msgTimer);
+  msgTimer=setTimeout(function(){el.classList.remove('show');},ms);
 }
 function tap(i){
   var prevServer=M.server, prevGames=M.games.length;
   wonRally(M,i);
   renderScore();
-  if(!M.over && M.games.length===prevGames && M.server!==prevServer){ flashHandout(M.server); }
+  if(M.over){ flashMsg('Match — '+firstName(M.matchWinner),'match',2600); }
+  else if(M.games.length>prevGames){ flashMsg('Game — '+firstName(M.games[M.games.length-1].winner),'game',2000); }
+  else if(M.server!==prevServer){ flashMsg('Hand-out — '+firstName(M.server)+' to serve','handout',1400); }
+  else { flashMsg('Point — '+firstName(i),'point',900); }
 }
 function openHistory(){
   var pl=M.config.players;
