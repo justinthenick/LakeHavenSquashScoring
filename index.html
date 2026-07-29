@@ -142,6 +142,7 @@
     <input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
     <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
     <button class="cta ghost" id="reloadFx">Reload fixtures</button>
+    <button class="cta ghost" id="sheetSettings" style="margin-top:8px">Sheet settings</button>
 
     <div class="eyebrow" style="margin:22px 0 0">Or enter manually</div>
     <label class="field">Player 1</label>
@@ -239,8 +240,8 @@
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
    ========================================================================== */
 var CONFIG = {
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwgoor0B851kNQwA45_xF8phxsXBHr1b2eA_teDEV9hFM0TK2spLIylwIUUsQDmWaCREw/exec",          // e.g. https://script.google.com/macros/s/AKfy.../exec
-  SHARED_SECRET:   "ivebeenchagned123"  // must match the SECRET in Code.gs
+  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec
+  SHARED_SECRET:   "change-me"  // must match the SECRET in Code.gs
 };
 // Persisted override so the URL/secret survive redeploys of this file.
 try{
@@ -452,10 +453,11 @@ function loadFixtures(){
   var host=$('fixtures');host.innerHTML='<div class="hint">Looking for fixtures…</div>';
   if(!scriptConfigured()){host.innerHTML='<div class="hint">Sheet not connected yet. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Connect sheet</button><br>Or enter players manually below.</div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
   fetchFixtures().then(renderFixtures).catch(function(err){
-    host.innerHTML='<div class="hint">Couldn\u2019t reach the sheet ('+esc(err.msg||err.reason||'offline')+'). Enter players manually below.</div>';
+    host.innerHTML='<div class="hint">Couldn\u2019t load fixtures ('+esc(err.msg||err.reason||'offline')+'). Use <b>Sheet settings</b> below to check the URL &amp; secret, or enter players manually.</div>';
   });
 }
 $('reloadFx').onclick=loadFixtures;
+$('sheetSettings').onclick=openSettings;
 $('fxSearch').oninput=applyFixtureFilter;
 $('fxDate').onchange=applyFixtureFilter;
 $('fxComp').onchange=applyFixtureFilter;
