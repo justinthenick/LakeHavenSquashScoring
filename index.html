@@ -240,8 +240,23 @@
    ========================================================================== */
 var CONFIG = {
   APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwgoor0B851kNQwA45_xF8phxsXBHr1b2eA_teDEV9hFM0TK2spLIylwIUUsQDmWaCREw/exec",          // e.g. https://script.google.com/macros/s/AKfy.../exec
-  SHARED_SECRET:   "ivebeenchanged123"  // must match the SECRET in Code.gs
+  SHARED_SECRET:   "ivebeenchagned123"  // must match the SECRET in Code.gs
 };
+// Persisted override so the URL/secret survive redeploys of this file.
+try{
+  var _cfg=JSON.parse(localStorage.getItem('cc_config')||'{}');
+  if(_cfg.url)CONFIG.APPS_SCRIPT_URL=_cfg.url;
+  if(_cfg.secret)CONFIG.SHARED_SECRET=_cfg.secret;
+}catch(e){}
+function openSettings(){
+  var url=prompt('Apps Script web-app URL (…/exec):', CONFIG.APPS_SCRIPT_URL||'');
+  if(url===null)return;
+  var secret=prompt('Shared secret (must match SECRET in Code.gs):', CONFIG.SHARED_SECRET||'');
+  if(secret===null)return;
+  CONFIG.APPS_SCRIPT_URL=(url||'').trim(); CONFIG.SHARED_SECRET=(secret||'').trim();
+  try{localStorage.setItem('cc_config',JSON.stringify({url:CONFIG.APPS_SCRIPT_URL,secret:CONFIG.SHARED_SECRET}));}catch(e){}
+  loadFixtures();
+}
 
 /* ==========================================================================
    2. SCORING ENGINE  (identical to engine.js — node-tested, 22/22)
@@ -435,7 +450,7 @@ function banner(id,kind,msg){var el=$(id);if(!msg){el.innerHTML='';return;}el.in
 
 function loadFixtures(){
   var host=$('fixtures');host.innerHTML='<div class="hint">Looking for fixtures…</div>';
-  if(!scriptConfigured()){host.innerHTML='<div class="hint">Sheet not connected yet — add your Apps Script URL in the file, or enter players manually below.</div>';return;}
+  if(!scriptConfigured()){host.innerHTML='<div class="hint">Sheet not connected yet. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Connect sheet</button><br>Or enter players manually below.</div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
   fetchFixtures().then(renderFixtures).catch(function(err){
     host.innerHTML='<div class="hint">Couldn\u2019t reach the sheet ('+esc(err.msg||err.reason||'offline')+'). Enter players manually below.</div>';
   });
@@ -647,6 +662,7 @@ function showResume(saved){
   $('rDiscard').onclick=function(){clearActive();el.innerHTML='';};
 }
 
+if($('fxDate')&&!$('fxDate').value)$('fxDate').value=localDate();
 refreshFirstServeLabels();loadFixtures();
 var _saved=loadActive();if(_saved&&_saved.M)showResume(_saved);
 // try to drain any queued results on load
