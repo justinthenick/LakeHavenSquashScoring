@@ -79,20 +79,21 @@
   .exit{color:var(--danger);font-weight:800;font-size:15px;padding:6px 8px}
   .arena{flex:1;display:flex;gap:10px;padding:6px 10px 8px;min-height:0}
   .panel{flex:1;border-radius:22px;position:relative;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;color:#fff;overflow:hidden;
+    align-items:stretch;color:#fff;overflow:hidden;padding:12px 12px 8px;
     transition:transform .06s ease}
   .panel:active{transform:scale(.985)}
-  .panel .pname{position:absolute;top:16px;left:0;right:0;text-align:center;
-    font-size:17px;font-weight:800;opacity:.92;padding:0 12px;
+  .panel .pname{flex:none;text-align:center;font-size:17px;font-weight:800;opacity:.94;padding:0 6px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .panel .pts{font-size:clamp(96px,34vw,190px);font-weight:900;line-height:.9;letter-spacing:-.04em}
-  .panel .tapcue{position:absolute;bottom:18px;font-size:12px;font-weight:800;
+  .serveslot{flex:none;height:54px;display:flex;align-items:center}
+  .panel .pts{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;
+    font-weight:900;line-height:.9;letter-spacing:-.04em;font-size:min(30vh,40vw,180px)}
+  .panel .tapcue{flex:none;text-align:center;font-size:12px;font-weight:800;
     letter-spacing:.12em;text-transform:uppercase;opacity:.72}
-  .serve{position:absolute;top:14px;width:54px;height:54px;border-radius:14px;
+  .serve{width:52px;height:52px;border-radius:14px;position:relative;
     background:rgba(20,20,28,.34);display:none;align-items:center;justify-content:center;
-    font-size:22px;font-weight:900;border:2px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.3);
-    transition:left .12s ease,right .12s ease}
+    font-size:21px;font-weight:900;border:2px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.3)}
   .serve.show{display:flex}
+  .serve.left{align-self:flex-start} .serve.right{align-self:flex-end}
   .serve small{font-size:9px;position:absolute;bottom:5px;letter-spacing:.1em}
   .serve::after{content:'⇄';position:absolute;top:2px;right:5px;font-size:11px;opacity:.9;font-weight:800}
   .msgbar{height:48px;display:flex;align-items:center;justify-content:center;padding:2px 12px 0;flex:none}
@@ -111,18 +112,20 @@
   .histrow .hsc{font-weight:900}
   .histrow .hs{color:var(--muted);font-size:12px}
   .histrow .hw{font-weight:800}
-  @media (orientation:landscape) and (max-height:520px){
-    .panel .pts{font-size:min(30vh,120px)}
-    .panel .pname{font-size:14px;top:8px}
-    .panel .tapcue{bottom:8px;font-size:10px}
-    .serve{width:42px;height:42px;font-size:17px;top:8px}
+  @media (orientation:landscape) and (max-height:600px){
+    .panel{padding:8px 10px 6px}
+    .panel .pname{font-size:14px}
+    .serveslot{height:44px}
+    .serve{width:42px;height:42px;font-size:17px}
     .serve::after{display:none}
-    .arena{gap:8px;padding:2px 8px 4px}
+    .panel .pts{font-size:min(34vh,30vw,150px)}
+    .panel .tapcue{display:none}
     .scorehead{padding:calc(4px + var(--safe-top)) 14px 2px}
-    .msgbar{height:38px;padding-top:0}
-    .msg{font-size:13px;padding:6px 14px}
+    .msgbar{height:34px;padding-top:0}
+    .msg{font-size:13px;padding:5px 12px}
+    .arena{gap:8px;padding:2px 8px 4px}
     .footbar{padding:4px 8px calc(4px + var(--safe-bot))}
-    .footbar button{padding:9px;font-size:13px;border-radius:12px}
+    .footbar button{padding:8px;font-size:13px;border-radius:12px}
     .footbar .clocks{font-size:11px}
     .footbar .clocks b{font-size:13px}
   }
@@ -214,13 +217,13 @@
   <div class="arena">
     <button class="panel" id="panel0">
       <span class="pname" id="name0">Player 1</span>
-      <span class="serve" id="serve0" hidden>R<small>SERVE</small></span>
+      <span class="serveslot"><span class="serve" id="serve0">R<small>SERVE</small></span></span>
       <span class="pts tnum" id="pts0">0</span>
       <span class="tapcue">tap = won rally</span>
     </button>
     <button class="panel" id="panel1">
       <span class="pname" id="name1">Player 2</span>
-      <span class="serve" id="serve1" hidden>R<small>SERVE</small></span>
+      <span class="serveslot"><span class="serve" id="serve1">R<small>SERVE</small></span></span>
       <span class="pts tnum" id="pts1">0</span>
       <span class="tapcue">tap = won rally</span>
     </button>
@@ -281,8 +284,8 @@
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
    ========================================================================== */
 var CONFIG = {
-  APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwgoor0B851kNQwA45_xF8phxsXBHr1b2eA_teDEV9hFM0TK2spLIylwIUUsQDmWaCREw/exec",          // e.g. https://script.google.com/macros/s/AKfy.../exec  ← paste on each deploy
-  SHARED_SECRET:   "ivebeenchanged123"  // must match the SECRET in Code.gs
+  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec  ← paste on each deploy
+  SHARED_SECRET:   "change-me"  // must match the SECRET in Code.gs
 };
 // The hardcoded values above win. A saved value only fills a BLANK, so markers never
 // have to enter anything once the file is configured; the prompt is just a fallback.
@@ -566,12 +569,10 @@ function renderScore(){
   for(var i=0;i<2;i++){
     var sv=$('serve'+i);
     if(M.server===i&&!M.over){
-      sv.classList.add('show');
+      sv.className='serve show '+(M.side==='R'?'right':'left');
       sv.firstChild.nodeValue=M.side;
-      if(M.side==='R'){sv.style.right='14px';sv.style.left='auto';}
-      else{sv.style.left='14px';sv.style.right='auto';}
     } else {
-      sv.classList.remove('show');
+      sv.className='serve';
     }
   }
   paintTimers();
