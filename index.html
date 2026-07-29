@@ -240,14 +240,15 @@
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
    ========================================================================== */
 var CONFIG = {
-  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec
+  APPS_SCRIPT_URL: "",          // e.g. https://script.google.com/macros/s/AKfy.../exec  ← paste on each deploy
   SHARED_SECRET:   "change-me"  // must match the SECRET in Code.gs
 };
-// Persisted override so the URL/secret survive redeploys of this file.
+// The hardcoded values above win. A saved value only fills a BLANK, so markers never
+// have to enter anything once the file is configured; the prompt is just a fallback.
 try{
   var _cfg=JSON.parse(localStorage.getItem('cc_config')||'{}');
-  if(_cfg.url)CONFIG.APPS_SCRIPT_URL=_cfg.url;
-  if(_cfg.secret)CONFIG.SHARED_SECRET=_cfg.secret;
+  if(!CONFIG.APPS_SCRIPT_URL && _cfg.url)CONFIG.APPS_SCRIPT_URL=_cfg.url;
+  if((!CONFIG.SHARED_SECRET || CONFIG.SHARED_SECRET==='change-me') && _cfg.secret)CONFIG.SHARED_SECRET=_cfg.secret;
 }catch(e){}
 function openSettings(){
   var url=prompt('Apps Script web-app URL (…/exec):', CONFIG.APPS_SCRIPT_URL||'');
