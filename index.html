@@ -453,7 +453,9 @@ function loadFixtures(){
   var host=$('fixtures');host.innerHTML='<div class="hint">Looking for fixtures…</div>';
   if(!scriptConfigured()){host.innerHTML='<div class="hint">Sheet not connected yet. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Connect sheet</button><br>Or enter players manually below.</div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
   fetchFixtures().then(renderFixtures).catch(function(err){
-    host.innerHTML='<div class="hint">Couldn\u2019t load fixtures ('+esc(err.msg||err.reason||'offline')+'). Use <b>Sheet settings</b> below to check the URL &amp; secret, or enter players manually.</div>';
+    var m=err.msg||err.reason||'offline';
+    var hint=(m==='timeout'||m==='network')?' This usually means the URL isn\u2019t the deployed <b>/exec</b> web app (the <b>/dev</b> URL won\u2019t work here), or the deployment\u2019s access isn\u2019t set to <b>Anyone</b>.':'';
+    host.innerHTML='<div class="hint">Couldn\u2019t load fixtures ('+esc(m)+').'+hint+' Use <b>Sheet settings</b> below to check the URL &amp; secret, or enter players manually.</div>';
   });
 }
 $('reloadFx').onclick=loadFixtures;
