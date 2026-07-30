@@ -122,13 +122,41 @@
   .histrow6 .hsc{font-weight:900}
   .histrow6 .hs{color:var(--muted);font-size:13px}
   .histrow6 .hw{font-weight:800}
-  .gapsummary{margin:6px 0 16px;text-align:left}
-  .gaprow{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;padding:6px 2px;
-    border-bottom:1px solid var(--line);font-size:15px}
+  .gapsummary{margin:10px 0 14px;text-align:left;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .gaprow{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;padding:9px 12px;
+    border-bottom:1px solid var(--line);font-size:16px;align-items:center}
   .gaprow span:first-child{text-align:left;color:var(--muted);font-weight:700}
-  .gaprow span{text-align:center}
-  .gaprow.gaphdr{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}
-  .gaprow.gaptot{font-weight:900;border-bottom:none}
+  .gaprow span{text-align:center;font-weight:800}
+  .gaprow.gaphdr{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);
+    background:var(--card);font-weight:800}
+  .gaprow.w0{background:linear-gradient(90deg,rgba(0,0,0,.04),transparent)}
+  .gaprow.w1{background:linear-gradient(270deg,rgba(0,0,0,.04),transparent)}
+  .gaprow.gaptot{font-weight:900;border-bottom:none;background:var(--card);font-size:17px}
+  .gaptie{text-align:left}
+  .tiehead{font-size:20px;font-weight:900;text-align:center;margin:2px 0 10px;letter-spacing:.01em}
+  .tielines{border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .tierow{display:grid;grid-template-columns:42px 1fr auto;gap:8px;align-items:center;
+    padding:9px 12px;border-bottom:1px solid var(--line);font-size:15px}
+  .tierow:last-child{border-bottom:none}
+  .tierow .tl{font-weight:900;color:var(--muted)}
+  .tierow .tn{color:var(--muted)}
+  .tierow .tw{font-weight:800}
+  .tierow.me{background:rgba(90,130,240,.10);outline:2px solid rgba(90,130,240,.35);outline-offset:-2px}
+  .tierow.a .tw{color:var(--p1)} .tierow.b .tw{color:var(--p2)}
+  .tierow.a{background:linear-gradient(90deg,rgba(0,0,0,.035),transparent)}
+  .tierow.b{background:linear-gradient(270deg,rgba(0,0,0,.035),transparent)}
+  @media (min-width:768px) and (min-height:700px){
+    #gap .sheet{max-width:720px;padding:34px 40px}
+    #gapTitle{font-size:34px}
+    #gap .sheet p{font-size:19px}
+    .breakclock{font-size:22px}
+    .gaprow{font-size:22px;padding:13px 18px}
+    .gaprow.gaphdr{font-size:14px}
+    .gaprow.gaptot{font-size:24px}
+    #gap .cta{font-size:22px;padding:20px}
+    .tiehead{font-size:28px;margin:6px 0 14px}
+    .tierow{font-size:20px;padding:13px 18px;grid-template-columns:56px 1fr auto}
+  }
   /* bind the score screen to the visible viewport (normal flow, page scroll locked in show())
      so the header stays below the browser bar and the screen can't be dragged/overscrolled */
   #score.active{height:100dvh;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
@@ -299,6 +327,7 @@
     <p id="gapSub">Next game — swap serve box on court if needed.</p>
     <div class="breakclock tnum">Break&nbsp; <span id="breakClock">00:00</span></div>
     <div id="gapSummary" class="gapsummary"></div>
+    <div id="gapTie" class="gaptie"></div>
     <button class="cta" id="gapGo">Start next game</button>
     <button class="cta ghost" id="gapUndo">Undo last point</button>
   </div>
@@ -694,13 +723,44 @@ function openGap(){
     ' ('+last.points[0]+'–'+last.points[1]+')';
   $('gapSub').textContent=M.config.players[M.server].name+' serves next — swap box on court if needed.';
   var gs=matchGamesScore(M);
-  var h='<div class="gaprow gaphdr"><span>Game</span><span>'+esc(firstName(0))+'</span><span>'+esc(firstName(1))+'</span><span>Time</span></div>';
-  M.games.forEach(function(g,i){var d=(M.timing.games[i]||{}).durationSec||0;
-    h+='<div class="gaprow"><span>#'+(i+1)+'</span><span class="tnum">'+g.points[0]+'</span><span class="tnum">'+g.points[1]+'</span><span class="tnum">'+fmtT(d)+'</span></div>';});
-  h+='<div class="gaprow gaptot"><span>Games</span><span class="tnum">'+gs[0]+'</span><span class="tnum">'+gs[1]+'</span><span class="tnum">'+fmtT(M.timing.matchSec)+'</span></div>';
+  var h='<div class="gaprow gaphdr"><span>Game</span><span style="color:var(--p1)">'+esc(firstName(0))+'</span><span style="color:var(--p2)">'+esc(firstName(1))+'</span><span>Time</span></div>';
+  M.games.forEach(function(g,i){var d=(M.timing.games[i]||{}).durationSec||0;var w=g.winner;
+    h+='<div class="gaprow'+(w===0?' w0':' w1')+'"><span>#'+(i+1)+'</span>'+
+      '<span class="tnum" style="color:var(--p1)">'+g.points[0]+'</span>'+
+      '<span class="tnum" style="color:var(--p2)">'+g.points[1]+'</span>'+
+      '<span class="tnum">'+fmtT(d)+'</span></div>';});
+  h+='<div class="gaprow gaptot"><span>Games</span><span class="tnum" style="color:var(--p1)">'+gs[0]+'</span><span class="tnum" style="color:var(--p2)">'+gs[1]+'</span><span class="tnum">'+fmtT(M.timing.matchSec)+'</span></div>';
   $('gapSummary').innerHTML=h;
+  loadTie();
   paintTimers();
   $('gap').classList.add('active');
+}
+function loadTie(){
+  var el=$('gapTie'); if(!el)return;
+  if(!activeFixture||!activeFixture.id||!scriptConfigured()){el.innerHTML='';return;}
+  el.innerHTML='<div class="hint" style="margin-top:14px">Loading the rest of the match…</div>';
+  callApi({action:'tie',fixtureId:activeFixture.id}).then(renderTie).catch(function(){el.innerHTML='';});
+}
+function renderTie(d){
+  var el=$('gapTie'); if(!el)return;
+  if(!d||!d.ok||!d.lines){el.innerHTML='';return;}
+  var toWin=Math.floor(d.lines.length/2)+1;
+  var lead=d.wonA>d.wonB?esc(d.teamA):(d.wonB>d.wonA?esc(d.teamB):'level');
+  var h='<div class="tiehead"><span style="color:var(--p1)">'+esc(d.teamA)+'</span> '+
+    '<b>'+d.wonA+'</b> – <b>'+d.wonB+'</b> <span style="color:var(--p2)">'+esc(d.teamB)+'</span></div>';
+  h+='<div class="tielines">';
+  d.lines.forEach(function(l){
+    var me=l.fixtureId===activeFixture.id;
+    var right = l.played
+      ? '<span class="tw">'+esc((l.winnerName||'').split(' ')[0])+' '+l.games+'</span>'
+      : '<span class="tp">'+(me?'this rubber':'to play')+'</span>';
+    h+='<div class="tierow'+(me?' me':'')+(l.played?(l.winnerTeam==='A'?' a':' b'):'')+'">'+
+       '<span class="tl">L'+l.line+'</span>'+
+       '<span class="tn">'+esc((l.p1||'').split(' ')[0])+' v '+esc((l.p2||'').split(' ')[0])+'</span>'+
+       right+'</div>';
+  });
+  h+='</div>';
+  el.innerHTML=h;
 }
 $('gapUndo').onclick=function(){undo(M);$('gap').classList.remove('active');lastGames=M.games.length;renderScore();};
 $('gapGo').onclick=function(){
