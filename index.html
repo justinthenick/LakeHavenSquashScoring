@@ -395,7 +395,7 @@ function flushQueue(){
 /* active-match autosave (crash/reopen resilience) --------------------- */
 var AKEY='cc_active';
 function makeMatchId(){var d=new Date();function p(n){return(n<10?'0':'')+n;}
-  return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'-'+Math.random().toString(36).slice(2,5);}
+  return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'-'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'-'+Math.random().toString(36).slice(2,8);}
 function persistActive(){if(!M)return;try{store.set(AKEY,JSON.stringify({M:M,fixture:activeFixture}));}catch(e){}}
 function clearActive(){store.del(AKEY);}
 function loadActive(){try{return JSON.parse(store.get(AKEY)||'null');}catch(e){return null;}}
@@ -690,6 +690,7 @@ function goSummary(){
     tr.innerHTML='<td>#'+(i+1)+'</td><td class="tnum">'+g.p1+'</td><td class="tnum">'+g.p2+'</td>';
     body.appendChild(tr);});
   $('tot0').textContent=p.pointsP1;$('tot1').textContent=p.pointsP2;
+  $('save').disabled=false;$('save').textContent='Save to sheet';   // reset per match — was staying "Saved ✓" and disabled
   banner('saveBanner','',null);
   $('queueHint').textContent=queueStatus();
   show('summary');
