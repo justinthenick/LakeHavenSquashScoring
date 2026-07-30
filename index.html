@@ -91,6 +91,11 @@
     font-weight:900;line-height:.9;letter-spacing:-.04em;font-size:min(30vh,40vw,180px)}
   .panel .tapcue{flex:none;text-align:center;font-size:12px;font-weight:800;
     letter-spacing:.12em;text-transform:uppercase;opacity:.72}
+  .gameball{display:none;flex:none;text-align:center;font-weight:900;font-size:15px;
+    letter-spacing:.1em;text-transform:uppercase;padding:7px 12px;border-radius:10px;margin:0 auto 4px;
+    background:#fff;color:#c0392b;box-shadow:0 2px 10px rgba(0,0,0,.18)}
+  .gameball.show{display:block}
+  .gameball.match{background:#c0392b;color:#fff}
   .serve{width:52px;height:52px;border-radius:14px;position:relative;
     background:rgba(20,20,28,.34);display:none;align-items:center;justify-content:center;
     font-size:21px;font-weight:900;border:2px solid #fff;box-shadow:0 3px 10px rgba(0,0,0,.3)}
@@ -110,12 +115,12 @@
   .msg.match{background:var(--ink);color:#fff;border-color:var(--ink);box-shadow:0 4px 16px rgba(0,0,0,.22)}
   .histrow{display:grid;grid-template-columns:30px 62px 1fr auto;gap:8px;align-items:center;
     padding:9px 4px;border-bottom:1px solid var(--line);font-size:14px}
-  .histhead,.histrow6{display:grid;grid-template-columns:30px 30px 1fr 1fr 1.3fr 1fr;gap:6px;
-    align-items:center;padding:8px 4px;border-bottom:1px solid var(--line);font-size:14px}
+  .histhead,.histrow6{display:grid;grid-template-columns:30px 28px 1fr 1fr 1.1fr 42px 1fr;gap:6px;
+    align-items:center;text-align:center;padding:8px 4px;border-bottom:1px solid var(--line);font-size:14px}
   .histhead{position:sticky;top:0;background:var(--card);font-weight:800;font-size:11px;
-    text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+    text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
   .histrow6 .hsc{font-weight:900}
-  .histrow6 .hs{color:var(--muted);font-size:12px}
+  .histrow6 .hs{color:var(--muted);font-size:13px}
   .histrow6 .hw{font-weight:800}
   .gapsummary{margin:6px 0 16px;text-align:left}
   .gaprow{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;padding:6px 2px;
@@ -124,9 +129,9 @@
   .gaprow span{text-align:center}
   .gaprow.gaphdr{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}
   .gaprow.gaptot{font-weight:900;border-bottom:none}
-  /* bind the score screen to the visible viewport so it can't be dragged/overscrolled */
-  #score.active{position:fixed;inset:0;height:100dvh;overflow:hidden;
-    overscroll-behavior:none;touch-action:manipulation}
+  /* bind the score screen to the visible viewport (normal flow, page scroll locked in show())
+     so the header stays below the browser bar and the screen can't be dragged/overscrolled */
+  #score.active{height:100dvh;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
   /* ---------- large devices (iPad): bigger everything, roomier message ---------- */
   @media (min-width:768px) and (min-height:700px){
     .scorehead{padding:calc(14px + var(--safe-top)) 22px 10px}
@@ -256,12 +261,14 @@
     <button class="panel" id="panel0">
       <span class="pname" id="name0">Player 1</span>
       <span class="serveslot"><span class="serve" id="serve0">R<small>SERVE</small></span></span>
+      <span class="gameball" id="gb0"></span>
       <span class="pts tnum" id="pts0">0</span>
       <span class="tapcue">tap = won rally</span>
     </button>
     <button class="panel" id="panel1">
       <span class="pname" id="name1">Player 2</span>
       <span class="serveslot"><span class="serve" id="serve1">R<small>SERVE</small></span></span>
+      <span class="gameball" id="gb1"></span>
       <span class="pts tnum" id="pts1">0</span>
       <span class="tapcue">tap = won rally</span>
     </button>
@@ -309,7 +316,7 @@
       <div class="g" id="hg1" style="color:var(--p2)">1</div>
     </div>
     <table>
-      <thead><tr><th>Game</th><th id="th0">P1</th><th id="th1">P2</th><th>Time</th></tr></thead>
+      <thead><tr><th>Game</th><th id="th0">P1</th><th id="th1">P2</th><th>Game Time</th></tr></thead>
       <tbody id="gameRows"></tbody>
       <tfoot><tr><td>Points</td><td id="tot0" class="tnum">0</td><td id="tot1" class="tnum">0</td><td id="totTime" class="tnum">—</td></tr></tfoot>
     </table>
@@ -348,6 +355,8 @@ function openSettings(){
    2. SCORING ENGINE  (identical to engine.js — node-tested, 22/22)
    ========================================================================== */
 function gamesNeeded(bestOf){return Math.floor(bestOf/2)+1;}
+function isGameBall(m,i){ if(m.over)return false; var pts=[m.points[0],m.points[1]]; pts[i]++; return gameResult(pts,m.config)===i; }
+function isMatchBall(m,i){ if(!isGameBall(m,i))return false; return gamesWonBy(m,i)+1>=gamesNeeded(m.config.bestOf); }
 function createMatch(config){return{config:config,points:[0,0],server:config.firstServer,side:'R',log:[],games:[],over:false,matchWinner:null,history:[]};}
 function snapshot(m){return{points:[m.points[0],m.points[1]],server:m.server,side:m.side,log:m.log.slice(),games:m.games.map(function(g){return{points:[g.points[0],g.points[1]],winner:g.winner};}),over:m.over,matchWinner:m.matchWinner};}
 function restore(m,s){m.points=s.points;m.server=s.server;m.side=s.side;m.log=s.log;m.games=s.games;m.over=s.over;m.matchWinner=s.matchWinner;}
@@ -445,7 +454,14 @@ var plannedNames=['',''];   // original fixture names, for sub tracking
 var M=null, activeFixture=null, tick=null;
 
 function $(id){return document.getElementById(id);}
-function show(scr){['setup','score','summary'].forEach(function(s){$(s).classList.toggle('active',s===scr);});}
+function show(scr){
+  ['setup','score','summary'].forEach(function(s){$(s).classList.toggle('active',s===scr);});
+  // Lock page scroll on the score screen so it can't be dragged/overscrolled; keep normal
+  // flow (so the header sits below the browser bar, not hidden under it).
+  var lock=(scr==='score');
+  document.documentElement.style.overflow=lock?'hidden':'';
+  document.body.style.overflow=lock?'hidden':'';
+}
 
 /* palette swatches */
 function buildSwatches(host,which){
@@ -615,6 +631,9 @@ function renderScore(){
     } else {
       sv.className='serve';
     }
+    var gb=$('gb'+i);
+    if(!M.over && isGameBall(M,i)){ gb.textContent=isMatchBall(M,i)?'MATCH BALL':'GAME BALL'; gb.className='gameball show'+(isMatchBall(M,i)?' match':''); }
+    else { gb.className='gameball'; }
   }
   paintTimers();
   if(M.over){clearInterval(tick);goSummary();return;}
@@ -644,13 +663,13 @@ function openHistory(){
   var arr=(M.log||[]).map(function(e){
     var g=e.game||1; perGame[g]=(perGame[g]||0)+1;
     return { game:g, rally:perGame[g], s0:e.score[0], s1:e.score[1],
-      srv:(pl[e.server].name||'').split(' ')[0]+' '+e.side, win:(pl[e.winner].name||'').split(' ')[0] };
+      srv:(pl[e.server].name||'').split(' ')[0], box:e.side, win:(pl[e.winner].name||'').split(' ')[0] };
   });
-  var head='<div class="histhead"><span>Gm</span><span>#</span><span>'+esc(n0)+'</span><span>'+esc(n1)+'</span><span>Serve</span><span>Won</span></div>';
+  var head='<div class="histhead"><span>Gm</span><span>#</span><span>'+esc(n0)+'</span><span>'+esc(n1)+'</span><span>Service</span><span>Box</span><span>Won</span></div>';
   var rows=arr.reverse().map(function(r){
     return '<div class="histrow6"><span>'+r.game+'</span><span>'+r.rally+'</span>'+
       '<span class="tnum hsc">'+r.s0+'</span><span class="tnum hsc">'+r.s1+'</span>'+
-      '<span class="hs">'+esc(r.srv)+'</span><span class="hw">'+esc(r.win)+'</span></div>';
+      '<span class="hs">'+esc(r.srv)+'</span><span class="hs">'+r.box+'</span><span class="hw">'+esc(r.win)+'</span></div>';
   }).join('');
   $('histBody').innerHTML=head+(rows||'<div class="hint">No rallies scored yet.</div>');
   $('histDrawer').classList.add('active');
@@ -726,7 +745,8 @@ function buildPayload(){
     winner:(M.matchWinner!=null?n[M.matchWinner].name:''),
     winnerIndex:(M.matchWinner!=null?M.matchWinner+1:0),
     durationSec:T.matchSec,
-    history:history
+    history:history,
+    firstServer:(M.config.firstServer||0)+1
   };
 }
 var pendingPayload=null;
