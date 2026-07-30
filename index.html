@@ -110,10 +110,42 @@
   .msg.match{background:var(--ink);color:#fff;border-color:var(--ink);box-shadow:0 4px 16px rgba(0,0,0,.22)}
   .histrow{display:grid;grid-template-columns:30px 62px 1fr auto;gap:8px;align-items:center;
     padding:9px 4px;border-bottom:1px solid var(--line);font-size:14px}
-  .histrow .hn{color:var(--muted);font-weight:700}
-  .histrow .hsc{font-weight:900}
-  .histrow .hs{color:var(--muted);font-size:12px}
-  .histrow .hw{font-weight:800}
+  .histhead,.histrow6{display:grid;grid-template-columns:30px 30px 1fr 1fr 1.3fr 1fr;gap:6px;
+    align-items:center;padding:8px 4px;border-bottom:1px solid var(--line);font-size:14px}
+  .histhead{position:sticky;top:0;background:var(--card);font-weight:800;font-size:11px;
+    text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+  .histrow6 .hsc{font-weight:900}
+  .histrow6 .hs{color:var(--muted);font-size:12px}
+  .histrow6 .hw{font-weight:800}
+  .gapsummary{margin:6px 0 16px;text-align:left}
+  .gaprow{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;padding:6px 2px;
+    border-bottom:1px solid var(--line);font-size:15px}
+  .gaprow span:first-child{text-align:left;color:var(--muted);font-weight:700}
+  .gaprow span{text-align:center}
+  .gaprow.gaphdr{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:800}
+  .gaprow.gaptot{font-weight:900;border-bottom:none}
+  /* bind the score screen to the visible viewport so it can't be dragged/overscrolled */
+  #score.active{position:fixed;inset:0;height:100dvh;overflow:hidden;
+    overscroll-behavior:none;touch-action:manipulation}
+  /* ---------- large devices (iPad): bigger everything, roomier message ---------- */
+  @media (min-width:768px) and (min-height:700px){
+    .scorehead{padding:calc(14px + var(--safe-top)) 22px 10px}
+    .scorehead .game{font-size:24px}
+    .exit{font-size:21px}
+    .hname{font-size:22px;max-width:22vw}
+    .msgbar{height:88px}
+    .msg{font-size:30px;padding:16px 40px;border-radius:999px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
+    .panel .pname{font-size:26px}
+    .serveslot{height:78px}
+    .serve{width:78px;height:78px;font-size:34px;border-radius:18px}
+    .serve small{font-size:12px;bottom:7px}
+    .serve::after{font-size:15px;top:4px;right:8px}
+    .panel .pts{font-size:min(46vh,34vw,420px)}
+    .panel .tapcue{font-size:15px}
+    .footbar button{padding:20px;font-size:20px}
+    .footbar .clocks{font-size:16px}
+    .footbar .clocks b{font-size:20px}
+  }
   @media (orientation:landscape) and (max-height:600px){
     .hname{display:block}
     .panel .pname{display:none}
@@ -215,7 +247,7 @@
   <div class="scorehead">
     <button class="exit" id="exit">Exit</button>
     <span class="hname" id="hname0"></span>
-    <div class="game">Game <b id="gameNo">1</b> · <span id="gamesLine" class="tnum">0–0</span> · to <span id="targetLine">15</span></div>
+    <div class="game">Game <b id="gameNo">1</b> · <span id="gamesLine" class="tnum">0–0</span></div>
     <span class="hname" id="hname1"></span>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
@@ -240,10 +272,10 @@
       <span>Game <b id="gameClock">00:00</b></span>
       <span>Match <b id="matchClock">00:00</b></span>
     </div>
-    <button id="flip">Swap box ⇄</button>
+    <button id="flip">Change server ⇄</button>
   </div>
   <div class="overlay" id="histDrawer">
-    <div class="sheet" style="max-width:460px;text-align:left;max-height:82vh;overflow:auto;padding:20px">
+    <div class="sheet" style="max-width:min(580px,94vw);text-align:left;max-height:82vh;overflow:auto;padding:20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <h2 style="margin:0">Score history</h2>
         <button class="exit" id="histClose" style="color:var(--ink)">Close ✕</button>
@@ -259,7 +291,9 @@
     <h2 id="gapTitle">Game 1 to Player 1</h2>
     <p id="gapSub">Next game — swap serve box on court if needed.</p>
     <div class="breakclock tnum">Break&nbsp; <span id="breakClock">00:00</span></div>
+    <div id="gapSummary" class="gapsummary"></div>
     <button class="cta" id="gapGo">Start next game</button>
+    <button class="cta ghost" id="gapUndo">Undo last point</button>
   </div>
 </div>
 
@@ -275,9 +309,9 @@
       <div class="g" id="hg1" style="color:var(--p2)">1</div>
     </div>
     <table>
-      <thead><tr><th>Game</th><th id="th0">P1</th><th id="th1">P2</th></tr></thead>
+      <thead><tr><th>Game</th><th id="th0">P1</th><th id="th1">P2</th><th>Time</th></tr></thead>
       <tbody id="gameRows"></tbody>
-      <tfoot><tr><td>Points</td><td id="tot0" class="tnum">0</td><td id="tot1" class="tnum">0</td></tr></tfoot>
+      <tfoot><tr><td>Points</td><td id="tot0" class="tnum">0</td><td id="tot1" class="tnum">0</td><td id="totTime" class="tnum">—</td></tr></tfoot>
     </table>
     <button class="cta" id="save">Save to sheet</button>
     <button class="cta ghost" id="again">New match</button>
@@ -319,8 +353,9 @@ function snapshot(m){return{points:[m.points[0],m.points[1]],server:m.server,sid
 function restore(m,s){m.points=s.points;m.server=s.server;m.side=s.side;m.log=s.log;m.games=s.games;m.over=s.over;m.matchWinner=s.matchWinner;}
 function gameResult(points,cfg){var a=points[0],b=points[1];var hi=Math.max(a,b),lo=Math.min(a,b);if(hi<cfg.pointsToWin)return null;if(cfg.winByTwo&&(hi-lo)<2)return null;return a>b?0:1;}
 function gamesWonBy(m,idx,inc){var n=0;for(var i=0;i<m.games.length;i++)if(m.games[i].winner===idx)n++;if(inc!==undefined&&inc===idx)n++;return n;}
-function wonRally(m,winner){if(m.over)return m;m.history.push(snapshot(m));m.points[winner]+=1;m.log.push({winner:winner,score:[m.points[0],m.points[1]],server:m.server,side:m.side});if(winner===m.server){m.side=(m.side==='R')?'L':'R';}else{m.server=winner;m.side='R';}var g=gameResult(m.points,m.config);if(g!==null){var need=gamesNeeded(m.config.bestOf);var wins=gamesWonBy(m,g,g);m.games.push({points:[m.points[0],m.points[1]],winner:g});if(wins>=need){m.over=true;m.matchWinner=g;}else{m.points=[0,0];m.server=g;m.side='R';}}return m;}
+function wonRally(m,winner){if(m.over)return m;m.history.push(snapshot(m));m.points[winner]+=1;m.log.push({game:m.games.length+1,winner:winner,score:[m.points[0],m.points[1]],server:m.server,side:m.side});if(winner===m.server){m.side=(m.side==='R')?'L':'R';}else{m.server=winner;m.side='R';}var g=gameResult(m.points,m.config);if(g!==null){var need=gamesNeeded(m.config.bestOf);var wins=gamesWonBy(m,g,g);m.games.push({points:[m.points[0],m.points[1]],winner:g});if(wins>=need){m.over=true;m.matchWinner=g;}else{m.points=[0,0];m.server=g;m.side='R';}}return m;}
 function toggleSide(m){if(m.over)return m;m.history.push(snapshot(m));m.side=(m.side==='R')?'L':'R';return m;}
+function changeServer(m){if(m.over)return m;m.history.push(snapshot(m));m.server=1-m.server;m.side='R';return m;}   // "mugs away" etc — swap who serves, no point
 function undo(m){if(m.history.length===0)return m;restore(m,m.history.pop());return m;}
 function matchGamesScore(m){return[gamesWonBy(m,0),gamesWonBy(m,1)];}
 
@@ -598,22 +633,26 @@ function tap(i){
   var prevServer=M.server, prevGames=M.games.length;
   wonRally(M,i);
   renderScore();
-  if(M.over){ flashMsg('Match — '+firstName(M.matchWinner),'match',2600); }
-  else if(M.games.length>prevGames){ flashMsg('Game — '+firstName(M.games[M.games.length-1].winner),'game',2000); }
-  else if(M.server!==prevServer){ flashMsg('Hand-out — '+firstName(M.server)+' to serve','handout',1400); }
-  else { flashMsg('Point — '+firstName(i),'point',900); }
+  if(M.over){ flashMsg('Match — '+firstName(M.matchWinner),'match',3400); }
+  else if(M.games.length>prevGames){ flashMsg('Game — '+firstName(M.games[M.games.length-1].winner),'game',2800); }
+  else if(M.server!==prevServer){ flashMsg('Hand-out — '+firstName(M.server)+' to serve','handout',1900); }
+  else { flashMsg('Point — '+firstName(i),'point',1200); }
 }
 function openHistory(){
-  var pl=M.config.players;
-  var rows=(M.log||[]).map(function(e,idx){
-    var srv=(pl[e.server].name||'').split(' ')[0];
-    var w=(pl[e.winner].name||'').split(' ')[0];
-    return '<div class="histrow"><span class="hn">'+(idx+1)+'</span>'+
-      '<span class="hsc tnum">'+e.score[0]+'–'+e.score[1]+'</span>'+
-      '<span class="hs">'+esc(srv)+' served '+e.side+'</span>'+
-      '<span class="hw">'+esc(w)+'</span></div>';
-  }).reverse().join('');
-  $('histBody').innerHTML=rows||'<div class="hint">No rallies scored yet.</div>';
+  var pl=M.config.players, n0=firstName(0), n1=firstName(1);
+  var perGame={};
+  var arr=(M.log||[]).map(function(e){
+    var g=e.game||1; perGame[g]=(perGame[g]||0)+1;
+    return { game:g, rally:perGame[g], s0:e.score[0], s1:e.score[1],
+      srv:(pl[e.server].name||'').split(' ')[0]+' '+e.side, win:(pl[e.winner].name||'').split(' ')[0] };
+  });
+  var head='<div class="histhead"><span>Gm</span><span>#</span><span>'+esc(n0)+'</span><span>'+esc(n1)+'</span><span>Serve</span><span>Won</span></div>';
+  var rows=arr.reverse().map(function(r){
+    return '<div class="histrow6"><span>'+r.game+'</span><span>'+r.rally+'</span>'+
+      '<span class="tnum hsc">'+r.s0+'</span><span class="tnum hsc">'+r.s1+'</span>'+
+      '<span class="hs">'+esc(r.srv)+'</span><span class="hw">'+esc(r.win)+'</span></div>';
+  }).join('');
+  $('histBody').innerHTML=head+(rows||'<div class="hint">No rallies scored yet.</div>');
   $('histDrawer').classList.add('active');
 }
 $('panel0').onclick=function(){tap(0);};
@@ -621,7 +660,7 @@ $('panel1').onclick=function(){tap(1);};
 $('undo').onclick=function(){undo(M);
   if($('gap').classList.contains('active'))$('gap').classList.remove('active');
   lastGames=M.games.length;renderScore();};
-$('flip').onclick=function(){toggleSide(M);renderScore();};
+$('flip').onclick=function(){changeServer(M);renderScore();};
 $('serve0').onclick=function(ev){ev.stopPropagation();toggleSide(M);renderScore();};
 $('serve1').onclick=function(ev){ev.stopPropagation();toggleSide(M);renderScore();};
 $('histBtn').onclick=openHistory;
@@ -635,9 +674,16 @@ function openGap(){
   $('gapTitle').textContent='Game '+M.games.length+' to '+M.config.players[last.winner].name+
     ' ('+last.points[0]+'–'+last.points[1]+')';
   $('gapSub').textContent=M.config.players[M.server].name+' serves next — swap box on court if needed.';
+  var gs=matchGamesScore(M);
+  var h='<div class="gaprow gaphdr"><span>Game</span><span>'+esc(firstName(0))+'</span><span>'+esc(firstName(1))+'</span><span>Time</span></div>';
+  M.games.forEach(function(g,i){var d=(M.timing.games[i]||{}).durationSec||0;
+    h+='<div class="gaprow"><span>#'+(i+1)+'</span><span class="tnum">'+g.points[0]+'</span><span class="tnum">'+g.points[1]+'</span><span class="tnum">'+fmtT(d)+'</span></div>';});
+  h+='<div class="gaprow gaptot"><span>Games</span><span class="tnum">'+gs[0]+'</span><span class="tnum">'+gs[1]+'</span><span class="tnum">'+fmtT(M.timing.matchSec)+'</span></div>';
+  $('gapSummary').innerHTML=h;
   paintTimers();
   $('gap').classList.add('active');
 }
+$('gapUndo').onclick=function(){undo(M);$('gap').classList.remove('active');lastGames=M.games.length;renderScore();};
 $('gapGo').onclick=function(){
   var ni=M.games.length; // index of the upcoming game
   M.timing.breakActive=false;
@@ -653,6 +699,9 @@ $('gapGo').onclick=function(){
 function buildPayload(){
   var gs=matchGamesScore(M);var n=M.config.players;var T=M.timing;
   var lineParts=M.games.map(function(g){return g.points[0]+'-'+g.points[1];});
+  // compact rally history: winner (1/2) per rally, grouped by game, games joined by "|"
+  var _hg={};(M.log||[]).forEach(function(e){var g=e.game||1;_hg[g]=(_hg[g]||'')+(e.winner+1);});
+  var history=Object.keys(_hg).sort(function(a,b){return a-b;}).map(function(g){return _hg[g];}).join('|');
   return{
     action:'result',
     matchId:M.matchId,
@@ -676,7 +725,8 @@ function buildPayload(){
     pointsP2:M.games.reduce(function(a,g){return a+g.points[1];},0),
     winner:(M.matchWinner!=null?n[M.matchWinner].name:''),
     winnerIndex:(M.matchWinner!=null?M.matchWinner+1:0),
-    durationSec:T.matchSec
+    durationSec:T.matchSec,
+    history:history
   };
 }
 var pendingPayload=null;
@@ -687,9 +737,10 @@ function goSummary(){
   $('wonLine').textContent=p.winner?(p.winner+' wins '+p.gamesP1+'–'+p.gamesP2):'Match ended';
   var body=$('gameRows');body.innerHTML='';
   p.games.forEach(function(g,i){var tr=document.createElement('tr');
-    tr.innerHTML='<td>#'+(i+1)+'</td><td class="tnum">'+g.p1+'</td><td class="tnum">'+g.p2+'</td>';
+    tr.innerHTML='<td>#'+(i+1)+'</td><td class="tnum">'+g.p1+'</td><td class="tnum">'+g.p2+'</td><td class="tnum">'+fmtT(g.duration||0)+'</td>';
     body.appendChild(tr);});
   $('tot0').textContent=p.pointsP1;$('tot1').textContent=p.pointsP2;
+  $('totTime').textContent=fmtT(p.durationSec||0);
   $('save').disabled=false;$('save').textContent='Save to sheet';   // reset per match — was staying "Saved ✓" and disabled
   banner('saveBanner','',null);
   $('queueHint').textContent=queueStatus();
@@ -730,7 +781,7 @@ function applyMatchChrome(cfg){
   $('hname1').textContent=cfg.players[1].name;
   $('hname0').style.color='var(--p1)';
   $('hname1').style.color='var(--p2)';
-  $('targetLine').textContent=cfg.pointsToWin;
+  var _tl=$('targetLine');if(_tl)_tl.textContent=cfg.pointsToWin;
 }
 function resumeMatch(saved){
   M=saved.M;activeFixture=saved.fixture||null;
