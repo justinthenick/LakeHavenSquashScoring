@@ -91,10 +91,10 @@
     font-weight:900;line-height:.9;letter-spacing:-.04em;font-size:min(30vh,40vw,180px)}
   .panel .tapcue{flex:none;text-align:center;font-size:12px;font-weight:800;
     letter-spacing:.12em;text-transform:uppercase;opacity:.72}
-  .gameball{display:none;flex:none;text-align:center;font-weight:900;font-size:15px;
-    letter-spacing:.1em;text-transform:uppercase;padding:7px 12px;border-radius:10px;margin:0 auto 4px;
+  .gameball{visibility:hidden;flex:none;align-self:center;text-align:center;font-weight:900;font-size:15px;
+    letter-spacing:.1em;text-transform:uppercase;padding:7px 14px;border-radius:10px;margin:2px auto;
     background:#fff;color:#c0392b;box-shadow:0 2px 10px rgba(0,0,0,.18)}
-  .gameball.show{display:block}
+  .gameball.show{visibility:visible}
   .gameball.match{background:#c0392b;color:#fff}
   .serve{width:52px;height:52px;border-radius:14px;position:relative;
     background:rgba(20,20,28,.34);display:none;align-items:center;justify-content:center;
@@ -174,6 +174,7 @@
     .serve small{font-size:12px;bottom:7px}
     .serve::after{font-size:15px;top:4px;right:8px}
     .panel .pts{font-size:min(46vh,34vw,420px)}
+    .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em}
     .panel .tapcue{font-size:15px}
     .footbar button{padding:20px;font-size:20px}
     .footbar .clocks{font-size:16px}
@@ -210,6 +211,12 @@
     align-items:center;justify-content:center;padding:24px;z-index:20}
   .overlay.active{display:flex}
   .sheet{background:var(--card);border-radius:22px;padding:24px;width:100%;max-width:420px;text-align:center}
+  #gap .sheet{max-height:calc(100dvh - 20px);overflow:auto}
+  .rotatehint{position:fixed;inset:0;z-index:60;background:var(--court);display:none;
+    align-items:center;justify-content:center;text-align:center;padding:30px;
+    font-size:21px;font-weight:800;color:var(--ink);line-height:1.4}
+  .rotatehint .ic{font-size:56px;display:block;margin-bottom:16px}
+  @media (orientation:landscape){ body.scoring .rotatehint{display:flex} }
   .sheet h2{font-size:22px;margin-bottom:6px}
   .sheet p{color:var(--muted);margin:0 0 18px;font-weight:600}
   .breakclock{font-size:30px;font-weight:900;color:var(--ink);margin:8px 0 20px;letter-spacing:.02em}
@@ -350,10 +357,13 @@
       <tfoot><tr><td>Points</td><td id="tot0" class="tnum">0</td><td id="tot1" class="tnum">0</td><td id="totTime" class="tnum">—</td></tr></tfoot>
     </table>
     <button class="cta" id="save">Save to sheet</button>
+    <button class="cta ghost" id="undoMatch">Undo last point</button>
     <button class="cta ghost" id="again">New match</button>
     <div class="hint" id="queueHint" style="margin-top:12px"></div>
   </div>
 </section>
+
+<div class="rotatehint" id="rotateHint"><div><span class="ic">↻</span>Turn your device to portrait to score</div></div>
 
 <script>
 /* ==========================================================================
@@ -488,6 +498,7 @@ function show(scr){
   // Lock page scroll on the score screen so it can't be dragged/overscrolled; keep normal
   // flow (so the header sits below the browser bar, not hidden under it).
   var lock=(scr==='score');
+  document.body.classList.toggle('scoring', lock);
   document.documentElement.style.overflow=lock?'hidden':'';
   document.body.style.overflow=lock?'hidden':'';
 }
@@ -662,13 +673,29 @@ function renderScore(){
     }
     var gb=$('gb'+i);
     if(!M.over && isGameBall(M,i)){ gb.textContent=isMatchBall(M,i)?'MATCH BALL':'GAME BALL'; gb.className='gameball show'+(isMatchBall(M,i)?' match':''); }
-    else { gb.className='gameball'; }
+    else { gb.textContent='GAME BALL'; gb.className='gameball'; }   // kept (hidden) to reserve equal height
   }
   paintTimers();
   if(M.over){clearInterval(tick);goSummary();return;}
 }
 var msgTimer=null;
-function firstName(idx){return (M.config.players[idx].name||'').split(' ')[0];}
+function _first(name){return (name||'').trim().split(/\s+/)[0]||'';}
+function _lastInit(name){var p=(name||'').trim().split(/\s+/);return p.length>1?p[p.length-1].charAt(0).toUpperCase():'';}
+function firstName(idx){
+  var a=M.config.players[0].name, b=M.config.players[1].name;
+  if(_first(a).toLowerCase()===_first(b).toLowerCase()){
+    var nm=M.config.players[idx].name, li=_lastInit(nm);
+    return _first(nm)+(li?' '+li:'');
+  }
+  return _first(M.config.players[idx].name);
+}
+// disambiguate two arbitrary full names (e.g. tie-list line) only when the first names clash
+function pairShort(a,b){
+  if(_first(a).toLowerCase()===_first(b).toLowerCase()){
+    return [_first(a)+(_lastInit(a)?' '+_lastInit(a):''), _first(b)+(_lastInit(b)?' '+_lastInit(b):'')];
+  }
+  return [_first(a),_first(b)];
+}
 function flashMsg(text,cls,ms){
   var el=$('msg'); if(!el)return;
   el.className='msg '+cls; el.textContent=text;
@@ -692,7 +719,7 @@ function openHistory(){
   var arr=(M.log||[]).map(function(e){
     var g=e.game||1; perGame[g]=(perGame[g]||0)+1;
     return { game:g, rally:perGame[g], s0:e.score[0], s1:e.score[1],
-      srv:(pl[e.server].name||'').split(' ')[0], box:e.side, win:(pl[e.winner].name||'').split(' ')[0] };
+      srv:firstName(e.server), box:e.side, win:firstName(e.winner) };
   });
   var head='<div class="histhead"><span>Gm</span><span>#</span><span>'+esc(n0)+'</span><span>'+esc(n1)+'</span><span>Service</span><span>Box</span><span>Won</span></div>';
   var rows=arr.reverse().map(function(r){
@@ -751,12 +778,13 @@ function renderTie(d){
   h+='<div class="tielines">';
   d.lines.forEach(function(l){
     var me=l.fixtureId===activeFixture.id;
+    var nm=pairShort(l.p1||'', l.p2||'');
     var right = l.played
       ? '<span class="tw">'+esc((l.winnerName||'').split(' ')[0])+' '+l.games+'</span>'
       : '<span class="tp">'+(me?'this rubber':'to play')+'</span>';
     h+='<div class="tierow'+(me?' me':'')+(l.played?(l.winnerTeam==='A'?' a':' b'):'')+'">'+
        '<span class="tl">L'+l.line+'</span>'+
-       '<span class="tn">'+esc((l.p1||'').split(' ')[0])+' v '+esc((l.p2||'').split(' ')[0])+'</span>'+
+       '<span class="tn">'+esc(nm[0])+' v '+esc(nm[1])+'</span>'+
        right+'</div>';
   });
   h+='</div>';
@@ -842,6 +870,7 @@ $('save').onclick=function(){
     $('save').textContent='Queued';$('queueHint').textContent=queueStatus();clearActive();
   });
 };
+$('undoMatch').onclick=function(){ if(!M)return; undo(M); show('score'); startTimers(); renderScore(); };
 $('again').onclick=function(){M=null;activeFixture=null;lastGames=0;clearActive();
   plannedNames=['',''];if($('sub1'))$('sub1').checked=false;if($('sub2'))$('sub2').checked=false;
   banner('setupBanner','',null);show('setup');loadFixtures();};
