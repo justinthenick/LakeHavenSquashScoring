@@ -91,10 +91,11 @@
     font-weight:900;line-height:.9;letter-spacing:-.04em;font-size:min(30vh,40vw,180px)}
   .panel .tapcue{flex:none;text-align:center;font-size:12px;font-weight:800;
     letter-spacing:.12em;text-transform:uppercase;opacity:.72}
-  .gameball{visibility:hidden;flex:none;align-self:center;text-align:center;font-weight:900;font-size:15px;
+  .gameball{display:none;flex:none;align-self:center;text-align:center;font-weight:900;font-size:15px;
     letter-spacing:.1em;text-transform:uppercase;padding:7px 14px;border-radius:10px;margin:8px auto;
     background:#fff;color:#c0392b;box-shadow:0 2px 10px rgba(0,0,0,.18)}
-  .gameball.show{visibility:visible}
+  .gameball.reserve{display:block;visibility:hidden}
+  .gameball.show{display:block;visibility:visible}
   .gameball.match{background:#c0392b;color:#fff}
   .serve{width:52px;height:52px;border-radius:14px;position:relative;
     background:rgba(20,20,28,.34);display:none;align-items:center;justify-content:center;
@@ -159,7 +160,7 @@
   }
   /* bind the score screen to the visible viewport (normal flow, page scroll locked in show())
      so the header stays below the browser bar and the screen can't be dragged/overscrolled */
-  #score.active{height:100dvh;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
+  #score.active{height:100dvh;min-height:0;max-height:100dvh;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
   /* ---------- large devices (iPad): bigger everything, roomier message ---------- */
   @media (min-width:768px) and (min-height:700px){
     .scorehead{padding:calc(14px + var(--safe-top)) 22px 10px}
@@ -289,7 +290,7 @@
   <div class="scorehead">
     <button class="exit" id="exit">Exit</button>
     <span class="hname" id="hname0"></span>
-    <div class="game">Game <b id="gameNo">1</b></div>
+    <div class="game"></div>
     <span class="hname" id="hname1"></span>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
@@ -313,7 +314,7 @@
   <div class="footbar">
     <button id="undo">↶ Undo</button>
     <div class="clocks tnum">
-      <span class="gamesTally">Games <b id="gamesLine">0–0</b></span>
+      <span class="gamesTally">Game <b id="gameNo">1</b> · Games <b id="gamesLine">0–0</b></span>
       <span>Game <b id="gameClock">00:00</b></span>
       <span>Match <b id="matchClock">00:00</b></span>
     </div>
@@ -666,6 +667,7 @@ function renderScore(){
   $('pts0').textContent=M.points[0];$('pts1').textContent=M.points[1];
   var gs=matchGamesScore(M);$('gamesLine').textContent=gs[0]+'–'+gs[1];
   $('gameNo').textContent=M.games.length+1;
+  var anyBall = !M.over && (isGameBall(M,0)||isGameBall(M,1));
   for(var i=0;i<2;i++){
     var sv=$('serve'+i);
     if(M.server===i&&!M.over){
@@ -675,8 +677,12 @@ function renderScore(){
       sv.className='serve';
     }
     var gb=$('gb'+i);
-    if(!M.over && isGameBall(M,i)){ gb.textContent=isMatchBall(M,i)?'MATCH BALL':'GAME BALL'; gb.className='gameball show'+(isMatchBall(M,i)?' match':''); }
-    else { gb.textContent='GAME BALL'; gb.className='gameball'; }   // kept (hidden) to reserve equal height
+    if(anyBall){
+      if(isGameBall(M,i)){ gb.textContent=isMatchBall(M,i)?'MATCH BALL':'GAME BALL'; gb.className='gameball show'+(isMatchBall(M,i)?' match':''); }
+      else { gb.textContent='GAME BALL'; gb.className='gameball reserve'; }   // hidden, reserves equal height
+    } else {
+      gb.className='gameball';   // no ball anywhere → no reserved space, score centres
+    }
   }
   paintTimers();
   if(M.over){clearInterval(tick);goSummary();return;}
