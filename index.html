@@ -85,14 +85,14 @@
     transition:transform .06s ease}
   .panel:active{transform:scale(.985)}
   .panel .pname{flex:none;text-align:center;font-size:17px;font-weight:800;opacity:.94;padding:0 6px;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .serveslot{flex:none;height:54px;display:flex;align-items:center}
+    margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .serveslot{flex:none;height:54px;margin:4px 0;display:flex;align-items:center}
   .panel .pts{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;
     font-weight:900;line-height:.9;letter-spacing:-.04em;font-size:min(30vh,40vw,180px)}
   .panel .tapcue{flex:none;text-align:center;font-size:12px;font-weight:800;
     letter-spacing:.12em;text-transform:uppercase;opacity:.72}
   .gameball{visibility:hidden;flex:none;align-self:center;text-align:center;font-weight:900;font-size:15px;
-    letter-spacing:.1em;text-transform:uppercase;padding:7px 14px;border-radius:10px;margin:2px auto;
+    letter-spacing:.1em;text-transform:uppercase;padding:7px 14px;border-radius:10px;margin:8px auto;
     background:#fff;color:#c0392b;box-shadow:0 2px 10px rgba(0,0,0,.18)}
   .gameball.show{visibility:visible}
   .gameball.match{background:#c0392b;color:#fff}
@@ -205,6 +205,8 @@
   .footbar .clocks{flex:1.2;display:flex;flex-direction:column;align-items:center;justify-content:center;
     gap:2px;color:var(--muted);font-weight:700;font-size:13px;line-height:1.2}
   .footbar .clocks b{color:var(--ink);font-size:16px;font-weight:900}
+  .footbar .clocks .gamesTally{color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:3px;margin-bottom:2px}
+  .footbar .clocks .gamesTally b{font-size:18px}
 
   /* ---------- between-games overlay ---------- */
   .overlay{position:fixed;inset:0;background:rgba(15,22,30,.72);display:none;
@@ -287,7 +289,7 @@
   <div class="scorehead">
     <button class="exit" id="exit">Exit</button>
     <span class="hname" id="hname0"></span>
-    <div class="game">Game <b id="gameNo">1</b> · <span id="gamesLine" class="tnum">0–0</span></div>
+    <div class="game">Game <b id="gameNo">1</b></div>
     <span class="hname" id="hname1"></span>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
@@ -311,6 +313,7 @@
   <div class="footbar">
     <button id="undo">↶ Undo</button>
     <div class="clocks tnum">
+      <span class="gamesTally">Games <b id="gamesLine">0–0</b></span>
       <span>Game <b id="gameClock">00:00</b></span>
       <span>Match <b id="matchClock">00:00</b></span>
     </div>
