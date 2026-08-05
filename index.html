@@ -161,7 +161,7 @@
   }
   /* bind the score screen to the visible viewport (normal flow, page scroll locked in show())
      so the header stays below the browser bar and the screen can't be dragged/overscrolled */
-  #score.active{height:100dvh;min-height:0;max-height:100dvh;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
+  #score.active{height:100dvh;height:100svh;min-height:0;max-height:100svh;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
   /* ---------- large devices (iPad): bigger everything, roomier message ---------- */
   @media (min-width:768px) and (min-height:700px){
     .scorehead{padding:calc(14px + var(--safe-top)) 22px 10px}
