@@ -91,11 +91,11 @@
     font-weight:900;line-height:.9;letter-spacing:-.04em;font-size:min(30vh,40vw,180px)}
   .panel .tapcue{flex:none;text-align:center;font-size:12px;font-weight:800;
     letter-spacing:.12em;text-transform:uppercase;opacity:.72}
-  .gameball{display:none;flex:none;align-self:center;text-align:center;font-weight:900;font-size:15px;
-    letter-spacing:.1em;text-transform:uppercase;padding:7px 14px;border-radius:10px;margin:8px auto;
-    background:#fff;color:#c0392b;box-shadow:0 2px 10px rgba(0,0,0,.18)}
-  .gameball.reserve{display:block;visibility:hidden}
-  .gameball.show{display:block;visibility:visible}
+  .gameball{display:none;position:absolute;top:20%;left:50%;transform:translateX(-50%);z-index:3;
+    text-align:center;font-weight:900;font-size:15px;white-space:nowrap;
+    letter-spacing:.1em;text-transform:uppercase;padding:7px 14px;border-radius:10px;
+    background:#fff;color:#c0392b;box-shadow:0 2px 12px rgba(0,0,0,.22)}
+  .gameball.show{display:block}
   .gameball.match{background:#c0392b;color:#fff}
   .serve{width:52px;height:52px;border-radius:14px;position:relative;
     background:rgba(20,20,28,.34);display:none;align-items:center;justify-content:center;
@@ -175,7 +175,7 @@
     .serve small{font-size:12px;bottom:7px}
     .serve::after{font-size:15px;top:4px;right:8px}
     .panel .pts{font-size:min(46vh,34vw,420px)}
-    .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em}
+    .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:19%}
     .panel .tapcue{font-size:15px}
     .footbar button{padding:20px;font-size:20px}
     .footbar .clocks{font-size:16px}
@@ -667,7 +667,6 @@ function renderScore(){
   $('pts0').textContent=M.points[0];$('pts1').textContent=M.points[1];
   var gs=matchGamesScore(M);$('gamesLine').textContent=gs[0]+'–'+gs[1];
   $('gameNo').textContent=M.games.length+1;
-  var anyBall = !M.over && (isGameBall(M,0)||isGameBall(M,1));
   for(var i=0;i<2;i++){
     var sv=$('serve'+i);
     if(M.server===i&&!M.over){
@@ -677,12 +676,8 @@ function renderScore(){
       sv.className='serve';
     }
     var gb=$('gb'+i);
-    if(anyBall){
-      if(isGameBall(M,i)){ gb.textContent=isMatchBall(M,i)?'MATCH BALL':'GAME BALL'; gb.className='gameball show'+(isMatchBall(M,i)?' match':''); }
-      else { gb.textContent='GAME BALL'; gb.className='gameball reserve'; }   // hidden, reserves equal height
-    } else {
-      gb.className='gameball';   // no ball anywhere → no reserved space, score centres
-    }
+    if(!M.over && isGameBall(M,i)){ gb.textContent=isMatchBall(M,i)?'MATCH BALL':'GAME BALL'; gb.className='gameball show'+(isMatchBall(M,i)?' match':''); }
+    else { gb.className='gameball'; }   // absolute overlay — hidden, no effect on the score position
   }
   paintTimers();
   if(M.over){clearInterval(tick);goSummary();return;}
