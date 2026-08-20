@@ -2,7 +2,7 @@
    Network-first for the page so pushes show up immediately when online;
    cache is only a fallback for offline. Static assets are cache-first.
    Bump CACHE on any shell change. */
-var CACHE = 'court-card-v5';
+var CACHE = 'court-card-v5.1';
 var SHELL = ['./index.html', './manifest.json'];
 
 self.addEventListener('install', function (e) {

@@ -15,7 +15,7 @@
   :root{
     --court:#e9edf0; --court-2:#dfe4e8; --ink:#14202b; --muted:#5d6b78;
     --line:#c7cfd6; --card:#f7f9fb; --yellow:#f2c200; --danger:#c0392b;
-    --p1:#e6913c; --p2:#6b52ae;                 /* overwritten per match */
+    --p1:#e6913c; --p2:#6b52ae; --p1t:#e6913c; --p2t:#6b52ae;   /* overwritten per match */
     --safe-top:env(safe-area-inset-top,0px);
     --safe-bot:env(safe-area-inset-bottom,0px);
   }
@@ -144,7 +144,7 @@
   .tierow .tn{color:var(--muted)}
   .tierow .tw{font-weight:800}
   .tierow.me{background:rgba(90,130,240,.10);outline:2px solid rgba(90,130,240,.35);outline-offset:-2px}
-  .tierow.a .tw{color:var(--p1)} .tierow.b .tw{color:var(--p2)}
+  .tierow.a .tw{color:var(--p1t)} .tierow.b .tw{color:var(--p2t)}
   .tierow.a{background:linear-gradient(90deg,rgba(0,0,0,.035),transparent)}
   .tierow.b{background:linear-gradient(270deg,rgba(0,0,0,.035),transparent)}
   @media (min-width:768px) and (min-height:700px){
@@ -354,9 +354,9 @@
     <div id="saveBanner"></div>
     <div class="won" id="wonLine">—</div>
     <div class="result-hero">
-      <div class="g" id="hg0" style="color:var(--p1)">0</div>
+      <div class="g" id="hg0" style="color:var(--p1t)">0</div>
       <div class="vs"></div>
-      <div class="g" id="hg1" style="color:var(--p2)">1</div>
+      <div class="g" id="hg1" style="color:var(--p2t)">1</div>
     </div>
     <table>
       <thead><tr><th>Game</th><th id="th0">P1</th><th id="th1">P2</th><th>Game Time</th></tr></thead>
@@ -637,6 +637,17 @@ $('start').onclick=function(){
 function isLight(hex){var c=hex.replace('#','');if(c.length===3)c=c.replace(/./g,'$&$&');
   var r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),b=parseInt(c.substr(4,2),16);
   return (0.299*r+0.587*g+0.114*b)>186;}
+// A player-color variant safe to use as TEXT on a light/white background (game summary,
+// tie header, etc.) — distinct from the panel's own background, which handles contrast
+// separately. Light colors (white included) get blended toward the app's dark ink so they
+// stay legible; normal/mid-dark colors pass through unchanged.
+function textSafe(hex){
+  if(!isLight(hex)) return hex;
+  var c=hex.replace('#','');if(c.length===3)c=c.replace(/./g,'$&$&');
+  var r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),b=parseInt(c.substr(4,2),16);
+  function h(n){return ('0'+Math.round(n).toString(16)).slice(-2);}
+  return '#'+h(r*0.22+20*0.78)+h(g*0.22+32*0.78)+h(b*0.22+43*0.78);   // blend toward #14202b
+}
 
 /* ---- timers (accumulators; a clock only advances while it is running) ---- */
 function fmtT(sec){var m=Math.floor(sec/60),s=sec%60;return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
@@ -757,13 +768,13 @@ function openGap(){
     ' ('+last.points[0]+'–'+last.points[1]+')';
   $('gapSub').textContent=M.config.players[M.server].name+' serves next — swap box on court if needed.';
   var gs=matchGamesScore(M);
-  var h='<div class="gaprow gaphdr"><span>Game</span><span style="color:var(--p1)">'+esc(firstName(0))+'</span><span style="color:var(--p2)">'+esc(firstName(1))+'</span><span>Time</span></div>';
+  var h='<div class="gaprow gaphdr"><span>Game</span><span style="color:var(--p1t)">'+esc(firstName(0))+'</span><span style="color:var(--p2t)">'+esc(firstName(1))+'</span><span>Time</span></div>';
   M.games.forEach(function(g,i){var d=(M.timing.games[i]||{}).durationSec||0;var w=g.winner;
     h+='<div class="gaprow'+(w===0?' w0':' w1')+'"><span>#'+(i+1)+'</span>'+
-      '<span class="tnum" style="color:var(--p1)">'+g.points[0]+'</span>'+
-      '<span class="tnum" style="color:var(--p2)">'+g.points[1]+'</span>'+
+      '<span class="tnum" style="color:var(--p1t)">'+g.points[0]+'</span>'+
+      '<span class="tnum" style="color:var(--p2t)">'+g.points[1]+'</span>'+
       '<span class="tnum">'+fmtT(d)+'</span></div>';});
-  h+='<div class="gaprow gaptot"><span>Games</span><span class="tnum" style="color:var(--p1)">'+gs[0]+'</span><span class="tnum" style="color:var(--p2)">'+gs[1]+'</span><span class="tnum">'+fmtT(M.timing.matchSec)+'</span></div>';
+  h+='<div class="gaprow gaptot"><span>Games</span><span class="tnum" style="color:var(--p1t)">'+gs[0]+'</span><span class="tnum" style="color:var(--p2t)">'+gs[1]+'</span><span class="tnum">'+fmtT(M.timing.matchSec)+'</span></div>';
   $('gapSummary').innerHTML=h;
   loadTie();
   paintTimers();
@@ -780,8 +791,8 @@ function renderTie(d){
   if(!d||!d.ok||!d.lines){el.innerHTML='';return;}
   var toWin=Math.floor(d.lines.length/2)+1;
   var lead=d.wonA>d.wonB?esc(d.teamA):(d.wonB>d.wonA?esc(d.teamB):'level');
-  var h='<div class="tiehead"><span style="color:var(--p1)">'+esc(d.teamA)+'</span> '+
-    '<b>'+d.wonA+'</b> – <b>'+d.wonB+'</b> <span style="color:var(--p2)">'+esc(d.teamB)+'</span></div>';
+  var h='<div class="tiehead"><span style="color:var(--p1t)">'+esc(d.teamA)+'</span> '+
+    '<b>'+d.wonA+'</b> – <b>'+d.wonB+'</b> <span style="color:var(--p2t)">'+esc(d.teamB)+'</span></div>';
   h+='<div class="tielines">';
   d.lines.forEach(function(l){
     var me=l.fixtureId===activeFixture.id;
@@ -892,6 +903,8 @@ $('again').onclick=function(){M=null;activeFixture=null;lastGames=0;clearActive(
 function applyMatchChrome(cfg){
   document.documentElement.style.setProperty('--p1',cfg.players[0].color);
   document.documentElement.style.setProperty('--p2',cfg.players[1].color);
+  document.documentElement.style.setProperty('--p1t',textSafe(cfg.players[0].color));
+  document.documentElement.style.setProperty('--p2t',textSafe(cfg.players[1].color));
   $('panel0').style.background='var(--p1)';$('panel1').style.background='var(--p2)';
   $('panel0').style.color=isLight(cfg.players[0].color)?'#14202b':'#fff';
   $('panel1').style.color=isLight(cfg.players[1].color)?'#14202b':'#fff';
@@ -899,8 +912,8 @@ function applyMatchChrome(cfg){
   $('name1').textContent=cfg.players[1].name+((M&&M.subs&&M.subs[1])?' (sub)':'');
   $('hname0').textContent=cfg.players[0].name;
   $('hname1').textContent=cfg.players[1].name;
-  $('hname0').style.color='var(--p1)';
-  $('hname1').style.color='var(--p2)';
+  $('hname0').style.color='var(--p1t)';
+  $('hname1').style.color='var(--p2t)';
   var _tl=$('targetLine');if(_tl)_tl.textContent=cfg.pointsToWin;
 }
 function resumeMatch(saved){
