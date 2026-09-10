@@ -49,6 +49,14 @@
   .swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
   .subrow{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
   .subrow input[type="checkbox"]{width:22px;height:22px;flex:none;accent-color:var(--ink);margin:0}
+  input.locked{background:var(--court-2);color:var(--muted)}
+  .suggest{display:flex;flex-direction:column;margin-top:8px;border-radius:14px;overflow:hidden}
+  .suggest:empty{margin-top:0}
+  .suggest .sugitem{display:block;width:100%;text-align:left;padding:13px 16px;font-size:15px;font-weight:600;
+    background:#fff;border:1px solid var(--line);border-top:none;color:var(--ink)}
+  .suggest .sugitem:first-child{border-top:1px solid var(--line);border-radius:12px 12px 0 0}
+  .suggest .sugitem:last-child{border-radius:0 0 12px 12px}
+  .suggest .sugitem.add{color:var(--muted);font-weight:700}
   .sw{width:44px;height:44px;border-radius:12px;border:3px solid transparent;position:relative}
   .sw[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 3px #fff inset}
   .cta{display:block;width:100%;padding:18px;margin-top:24px;border-radius:16px;
@@ -264,10 +272,12 @@
     <label class="field">Player 1</label>
     <input id="n1" placeholder="Player 1" autocomplete="off">
     <label class="subrow"><input type="checkbox" id="sub1"> Substitute — the name above is a fill-in</label>
+    <div id="sug1" class="suggest"></div>
     <div class="swatches" id="sw1"></div>
     <label class="field">Player 2</label>
     <input id="n2" placeholder="Player 2" autocomplete="off">
     <label class="subrow"><input type="checkbox" id="sub2"> Substitute — the name above is a fill-in</label>
+    <div id="sug2" class="suggest"></div>
     <div class="swatches" id="sw2"></div>
 
     <div class="hint" style="margin-top:18px">Format: 15 points, best of 5, sudden death (no win-by-two).</div>
@@ -537,7 +547,62 @@ wireToggle($('firstServe'));
 function pressedVal(host){var b=host.querySelector('[aria-pressed="true"]');return b?b.dataset.v:null;}
 function names(){return[$('n1').value.trim()||'Player 1',$('n2').value.trim()||'Player 2'];}
 function refreshFirstServeLabels(){var n=names();$('fs1').textContent=n[0];$('fs2').textContent=n[1];}
-$('n1').oninput=refreshFirstServeLabels;$('n2').oninput=refreshFirstServeLabels;
+
+/* player roster + fixture-name locking --------------------------------
+   A name populated FROM a fixture is locked (read-only) unless its
+   Substitute box is checked, at which point it becomes a filtered
+   roster search; an unmatched name can be added as a new player, which
+   is written to Supabase immediately (not deferred to match-submit) so
+   it's in the roster for every following week too. */
+var allPlayers=[];
+function fetchPlayers(){ return callApi({action:'players'}).then(function(d){return d.players||[];}); }
+function loadPlayers(){ if(!scriptConfigured())return; fetchPlayers().then(function(list){allPlayers=list;}).catch(function(){}); }
+
+function lockField(i,on){
+  var el=$('n'+(i+1)); if(!el)return; el.readOnly=!!on; el.classList.toggle('locked',!!on);
+  if(on) hideSuggest(i);
+}
+function hideSuggest(i){ var s=$('sug'+(i+1)); if(s) s.innerHTML=''; }
+function renderSuggest(i,q){
+  var host=$('sug'+(i+1)); if(!host) return;
+  var raw=(q||'').trim(), ql=raw.toLowerCase();
+  var matches=ql?allPlayers.filter(function(n){return n.toLowerCase().indexOf(ql)>-1;}).slice(0,6):allPlayers.slice(0,6);
+  var exact=ql && allPlayers.some(function(n){return n.toLowerCase()===ql;});
+  var html=matches.map(function(n){return '<button type="button" class="sugitem" data-n="'+esc(n)+'">'+esc(n)+'</button>';}).join('');
+  if(raw && !exact) html+='<button type="button" class="sugitem add" data-add="'+esc(raw)+'">+ Add \u201c'+esc(raw)+'\u201d as new player</button>';
+  host.innerHTML=html;
+  [].slice.call(host.querySelectorAll('.sugitem')).forEach(function(b){
+    b.onclick=function(){
+      if(b.dataset.add!=null) addNewPlayer(i,b.dataset.add);
+      else { $('n'+(i+1)).value=b.dataset.n; hideSuggest(i); refreshFirstServeLabels(); }
+    };
+  });
+}
+function addNewPlayer(i,name){
+  name=(name||'').trim(); if(!name) return;
+  var host=$('sug'+(i+1));
+  if(host) host.innerHTML='<div class="hint" style="padding:10px 0">Adding\u2026</div>';
+  callApi({action:'addPlayer',name:name}).then(function(d){
+    if(d&&d.name){ if(allPlayers.indexOf(d.name)<0) allPlayers.push(d.name); $('n'+(i+1)).value=d.name; }
+    hideSuggest(i); refreshFirstServeLabels();
+  }).catch(function(err){
+    if(host) host.innerHTML='<div class="hint">Couldn\u2019t add player'+(err&&err.msg?(': '+esc(err.msg)):'')+'. Try again.</div>';
+  });
+}
+function wireSub(i){
+  var cb=$('sub'+(i+1)), input=$('n'+(i+1));
+  cb.onchange=function(){
+    if(!activeFixture) return;             // manual entry (no fixture picked) is never lock-gated
+    if(cb.checked){ lockField(i,false); input.value=''; renderSuggest(i,''); input.focus(); }
+    else { input.value=plannedNames[i]||''; lockField(i,true); }
+    refreshFirstServeLabels();
+  };
+  input.oninput=function(){
+    refreshFirstServeLabels();
+    if(activeFixture && cb.checked && !input.readOnly) renderSuggest(i,input.value);
+  };
+}
+wireSub(0);wireSub(1);
 
 /* fixtures list */
 var allFixtures=[];
@@ -590,6 +655,7 @@ function applyFixture(fx){
   $('n1').value=fx.player1||'';$('n2').value=fx.player2||'';
   plannedNames=[fx.player1||'',fx.player2||''];
   $('sub1').checked=false;$('sub2').checked=false;
+  lockField(0,true);lockField(1,true);
   if(fx.color1){chosen.c1=fx.color1;}if(fx.color2){chosen.c2=fx.color2;}
   buildSwatches($('sw1'),'c1');buildSwatches($('sw2'),'c2');
   refreshFirstServeLabels();
@@ -895,6 +961,7 @@ $('save').onclick=function(){
 $('undoMatch').onclick=function(){ if(!M)return; undo(M); show('score'); startTimers(); renderScore(); };
 $('again').onclick=function(){M=null;activeFixture=null;lastGames=0;clearActive();
   plannedNames=['',''];if($('sub1'))$('sub1').checked=false;if($('sub2'))$('sub2').checked=false;
+  lockField(0,false);lockField(1,false);hideSuggest(0);hideSuggest(1);
   banner('setupBanner','',null);show('setup');loadFixtures();};
 
 /* ==========================================================================
@@ -938,7 +1005,7 @@ function showResume(saved){
 }
 
 if($('fxDate')&&!$('fxDate').value)$('fxDate').value=localDate();
-refreshFirstServeLabels();loadFixtures();
+refreshFirstServeLabels();loadFixtures();loadPlayers();
 var _saved=loadActive();if(_saved&&_saved.M)showResume(_saved);
 // try to drain any queued results on load
 if(scriptConfigured()){flushQueue().then(function(n){if(n)console.log('synced',n,'queued results');}).catch(function(){});}
