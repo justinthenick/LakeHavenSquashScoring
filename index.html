@@ -49,6 +49,8 @@
   .swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
   .subrow{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
   .subrow input[type="checkbox"]{width:22px;height:22px;flex:none;accent-color:var(--ink);margin:0}
+  .abandonRow{display:flex;justify-content:center;padding:6px 0 10px}
+  .linklike{background:none;border:none;color:var(--muted);font-size:12px;font-weight:700;text-decoration:underline;padding:10px;min-height:auto}
   input.locked{background:var(--court-2);color:var(--muted)}
   .suggest{display:flex;flex-direction:column;margin-top:8px;border-radius:14px;overflow:hidden}
   .suggest:empty{margin-top:0}
@@ -333,6 +335,7 @@
     </div>
     <button id="flip">Change server ⇄</button>
   </div>
+  <div class="abandonRow"><button id="abandonBtn" class="linklike">Match abandoned — nominate winner</button></div>
   <div class="overlay" id="histDrawer">
     <div class="sheet" style="max-width:min(580px,94vw);text-align:left;max-height:82vh;overflow:auto;padding:20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -354,6 +357,17 @@
     <div id="gapTie" class="gaptie"></div>
     <button class="cta" id="gapGo">Start next game</button>
     <button class="cta ghost" id="gapUndo">Undo last point</button>
+  </div>
+</div>
+
+<!-- match abandoned - nominate winner -->
+<div class="overlay" id="abandonSheet">
+  <div class="sheet">
+    <h2>Match abandoned</h2>
+    <p>Play could not continue (injury, forfeit, or any other reason). All remaining points and games are awarded to whichever player did NOT retire or withdraw. This cannot be undone once saved.</p>
+    <button class="cta" id="abWin0">Award win to <span id="abName0"></span></button>
+    <button class="cta" id="abWin1">Award win to <span id="abName1"></span></button>
+    <button class="cta ghost" id="abCancel">Cancel</button>
   </div>
 </div>
 
@@ -422,6 +436,25 @@ function wonRally(m,winner){if(m.over)return m;m.history.push(snapshot(m));m.poi
 function toggleSide(m){if(m.over)return m;m.history.push(snapshot(m));m.side=(m.side==='R')?'L':'R';return m;}
 function changeServer(m){if(m.over)return m;m.history.push(snapshot(m));m.server=1-m.server;m.side='R';return m;}   // "mugs away" etc — swap who serves, no point
 function undo(m){if(m.history.length===0)return m;restore(m,m.history.pop());return m;}
+// Match could not continue (injury, forfeit, any other reason) - all
+// remaining points AND games go to winnerIdx. The current in-progress
+// game is recorded with the loser frozen at their score at the moment of
+// stoppage (as though they scored no further points) and the winner
+// topped up to pointsToWin; any further games still needed to reach the
+// match win are recorded as clean pointsToWin-0 sweeps. This produces a
+// perfectly normal, real set of completed games - no special-casing
+// needed anywhere downstream (buildPayload, writeResult, game_log all
+// see an ordinary finished match).
+function abandonMatch(m,winnerIdx){
+  if(m.over) return m;
+  m.history.push(snapshot(m));
+  var loserIdx=1-winnerIdx, need=gamesNeeded(m.config.bestOf);
+  var finalPts=[0,0]; finalPts[winnerIdx]=m.config.pointsToWin; finalPts[loserIdx]=m.points[loserIdx];
+  m.games.push({points:finalPts, winner:winnerIdx});
+  while(gamesWonBy(m,winnerIdx)<need){ var sweep=[0,0]; sweep[winnerIdx]=m.config.pointsToWin; m.games.push({points:sweep, winner:winnerIdx}); }
+  m.points=[0,0]; m.over=true; m.matchWinner=winnerIdx; m.abandoned=true;
+  return m;
+}
 function matchGamesScore(m){return[gamesWonBy(m,0),gamesWonBy(m,1)];}
 
 /* ==========================================================================
@@ -875,6 +908,24 @@ function renderTie(d){
   el.innerHTML=h;
 }
 $('gapUndo').onclick=function(){undo(M);$('gap').classList.remove('active');lastGames=M.games.length;renderScore();};
+
+function openAbandon(){
+  var n=M.config.players;
+  $('abName0').textContent=n[0].name; $('abName1').textContent=n[1].name;
+  $('abandonSheet').classList.add('active');
+}
+function confirmAbandon(winnerIdx){
+  var n=M.config.players;
+  if(!confirm('Award the match to '+n[winnerIdx].name+'? All remaining games and points go to them, and this cannot be undone once saved.')) return;
+  $('abandonSheet').classList.remove('active');
+  abandonMatch(M,winnerIdx);
+  lastGames=M.games.length;
+  goSummary();
+}
+$('abandonBtn').onclick=openAbandon;
+$('abCancel').onclick=function(){ $('abandonSheet').classList.remove('active'); };
+$('abWin0').onclick=function(){confirmAbandon(0);};
+$('abWin1').onclick=function(){confirmAbandon(1);};
 $('gapGo').onclick=function(){
   var ni=M.games.length; // index of the upcoming game
   M.timing.breakActive=false;
@@ -910,7 +961,7 @@ function buildPayload(){
       return{p1:g.points[0],p2:g.points[1],winner:g.winner+1,
         timeStart:t.startTs||'',timeEnd:t.endTs||'',
         duration:t.durationSec||0,breakTime:t.breakBeforeSec||0};}),
-    scoreLine:gs[0]+'-'+gs[1]+' ('+lineParts.join(', ')+')',
+    scoreLine:gs[0]+'-'+gs[1]+' ('+lineParts.join(', ')+')'+(M.abandoned?' (abandoned)':''),
     gamesP1:gs[0],gamesP2:gs[1],
     pointsP1:M.games.reduce(function(a,g){return a+g.points[0];},0),
     pointsP2:M.games.reduce(function(a,g){return a+g.points[1];},0),
@@ -926,7 +977,7 @@ function goSummary(){
   var p=buildPayload();pendingPayload=p;var n=M.config.players;
   $('th0').textContent=n[0].name;$('th1').textContent=n[1].name;
   $('hg0').textContent=p.gamesP1;$('hg1').textContent=p.gamesP2;
-  $('wonLine').textContent=p.winner?(p.winner+' wins '+p.gamesP1+'–'+p.gamesP2):'Match ended';
+  $('wonLine').textContent=(p.winner?(p.winner+' wins '+p.gamesP1+'–'+p.gamesP2):'Match ended')+(M.abandoned?' (match abandoned)':'');
   var body=$('gameRows');body.innerHTML='';
   p.games.forEach(function(g,i){var tr=document.createElement('tr');
     tr.innerHTML='<td>#'+(i+1)+'</td><td class="tnum">'+g.p1+'</td><td class="tnum">'+g.p2+'</td><td class="tnum">'+fmtT(g.duration||0)+'</td>';
