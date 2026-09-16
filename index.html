@@ -269,8 +269,9 @@
     <input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
     <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
     <button class="cta ghost" id="reloadFx">Reload fixtures</button>
+    <button class="cta ghost" id="pendingSetup">View pending results / retry sync</button>
 
-    <div class="eyebrow" style="margin:22px 0 0">Or enter manually</div>
+    <div class="eyebrow" style="margin:22px 0 0">Selected fixture and substitutes</div>
     <label class="field">Player 1</label>
     <input id="n1" placeholder="Player 1" autocomplete="off">
     <label class="subrow"><input type="checkbox" id="sub1"> Substitute — the name above is a fill-in</label>
@@ -282,7 +283,7 @@
     <div id="sug2" class="suggest"></div>
     <div class="swatches" id="sw2"></div>
 
-    <div class="hint" style="margin-top:18px">Format: 15 points, best of 5, sudden death (no win-by-two).</div>
+    <div class="hint" id="formatHint" style="margin-top:18px">Select a fixture to load its scoring format.</div>
 
     <div class="row" style="margin-top:6px">
       <div><label class="field">Scorer</label><input id="scorer" placeholder="Scorer name" autocomplete="off"></div>
@@ -387,38 +388,42 @@
       <tbody id="gameRows"></tbody>
       <tfoot><tr><td>Points</td><td id="tot0" class="tnum">0</td><td id="tot1" class="tnum">0</td><td id="totTime" class="tnum">—</td></tr></tfoot>
     </table>
-    <button class="cta" id="save">Save to sheet</button>
+    <button class="cta" id="save">Save result</button>
     <button class="cta ghost" id="undoMatch">Undo last point</button>
     <button class="cta ghost" id="again">New match</button>
+    <button class="cta ghost" id="pendingOpen">View pending results</button>
     <div class="hint" id="queueHint" style="margin-top:12px"></div>
   </div>
 </section>
 
 <div class="rotatehint" id="rotateHint"><div><span class="ic">↻</span>Turn your device to portrait to score</div></div>
 
+<div class="overlay" id="pendingSheet"><div class="sheet" style="max-height:85vh;overflow:auto"><h2>Pending results</h2><div id="pendingList"></div><button class="cta" id="pendingRetry">Retry sync</button><button class="cta ghost" id="pendingExport">Download a backup</button><button class="cta ghost" id="pendingClose">Close</button></div></div>
 <script>
 /* ==========================================================================
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
    ========================================================================== */
 var CONFIG = {
   APPS_SCRIPT_URL: "https://script.google.com/macros/s/AKfycbwC9Sas1dTrdKtOP7ZDWHF3tuGCJGUQ3xyj5QfK7H-KRtu9W5Y1c4BchcSML41yAHKi/exec",          // e.g. https://script.google.com/macros/s/AKfy.../exec  ← paste on each deploy
-  SHARED_SECRET:   "ivebeenchanged123"  // must match the SECRET in Code.gs
+  SHARED_SECRET: "" // entered privately once per device
 };
 // The hardcoded values above win. A saved value only fills a BLANK, so markers never
 // have to enter anything once the file is configured; the prompt is just a fallback.
 try{
   var _cfg=JSON.parse(localStorage.getItem('cc_config')||'{}');
   if(!CONFIG.APPS_SCRIPT_URL && _cfg.url)CONFIG.APPS_SCRIPT_URL=_cfg.url;
-  if((!CONFIG.SHARED_SECRET || CONFIG.SHARED_SECRET==='change-me') && _cfg.secret)CONFIG.SHARED_SECRET=_cfg.secret;
+  if(_cfg.token)CONFIG.SHARED_SECRET=_cfg.token;
 }catch(e){}
 function openSettings(){
-  var url=prompt('Apps Script web-app URL (…/exec):', CONFIG.APPS_SCRIPT_URL||'');
-  if(url===null)return;
-  var secret=prompt('Shared secret (must match SECRET in Code.gs):', CONFIG.SHARED_SECRET||'');
-  if(secret===null)return;
-  CONFIG.APPS_SCRIPT_URL=(url||'').trim(); CONFIG.SHARED_SECRET=(secret||'').trim();
-  try{localStorage.setItem('cc_config',JSON.stringify({url:CONFIG.APPS_SCRIPT_URL,secret:CONFIG.SHARED_SECRET}));}catch(e){}
-  loadFixtures();
+ var secret=prompt('Enter the private four-character club code (letters or digits):','');if(secret===null)return;
+ secret=secret.trim();
+ if(!/^[A-Za-z0-9]{4}$/.test(secret)&&secret.length<16){alert('Enter four letters or digits.');return;}
+ jsonp(CONFIG.APPS_SCRIPT_URL+'?action=authorizeDevice&code='+encodeURIComponent(secret)).then(function(d){
+  if(!d||!d.ok||!d.token)throw new Error((d&&d.error)||'Unable to connect this device.');
+  CONFIG.SHARED_SECRET=d.token;
+  try{localStorage.setItem('cc_config',JSON.stringify({url:CONFIG.APPS_SCRIPT_URL,token:d.token}));}catch(e){alert('This browser cannot remember access. You will need to enter the code again next time.');}
+  loadFixtures();loadPlayers();flushQueue().then(refreshQueueStatus).catch(refreshQueueStatus);
+ }).catch(function(e){alert(e.message||e.msg||'Connection failed. Please try again when online.');});
 }
 
 /* ==========================================================================
@@ -428,14 +433,14 @@ function gamesNeeded(bestOf){return Math.floor(bestOf/2)+1;}
 function isGameBall(m,i){ if(m.over)return false; var pts=[m.points[0],m.points[1]]; pts[i]++; return gameResult(pts,m.config)===i; }
 function isMatchBall(m,i){ if(!isGameBall(m,i))return false; return gamesWonBy(m,i)+1>=gamesNeeded(m.config.bestOf); }
 function createMatch(config){return{config:config,points:[0,0],server:config.firstServer,side:'R',log:[],games:[],over:false,matchWinner:null,history:[]};}
-function snapshot(m){return{points:[m.points[0],m.points[1]],server:m.server,side:m.side,log:m.log.slice(),games:m.games.map(function(g){return{points:[g.points[0],g.points[1]],winner:g.winner};}),over:m.over,matchWinner:m.matchWinner};}
-function restore(m,s){m.points=s.points;m.server=s.server;m.side=s.side;m.log=s.log;m.games=s.games;m.over=s.over;m.matchWinner=s.matchWinner;}
+function snapshot(m){return {points:m.points.slice(),server:m.server,side:m.side,log:m.log.slice(),games:m.games.map(function(g){return {points:g.points.slice(),winner:g.winner};}),over:m.over,matchWinner:m.matchWinner,abandoned:!!m.abandoned,timing:m.timing?JSON.parse(JSON.stringify(m.timing)):null};}
+function restore(m,s){m.points=s.points;m.server=s.server;m.side=s.side;m.log=s.log;m.games=s.games;m.over=s.over;m.matchWinner=s.matchWinner;m.abandoned=!!s.abandoned;if(s.timing)m.timing=s.timing;}
 function gameResult(points,cfg){var a=points[0],b=points[1];var hi=Math.max(a,b),lo=Math.min(a,b);if(hi<cfg.pointsToWin)return null;if(cfg.winByTwo&&(hi-lo)<2)return null;return a>b?0:1;}
 function gamesWonBy(m,idx,inc){var n=0;for(var i=0;i<m.games.length;i++)if(m.games[i].winner===idx)n++;if(inc!==undefined&&inc===idx)n++;return n;}
 function wonRally(m,winner){if(m.over)return m;m.history.push(snapshot(m));m.points[winner]+=1;m.log.push({game:m.games.length+1,winner:winner,score:[m.points[0],m.points[1]],server:m.server,side:m.side});if(winner===m.server){m.side=(m.side==='R')?'L':'R';}else{m.server=winner;m.side='R';}var g=gameResult(m.points,m.config);if(g!==null){var need=gamesNeeded(m.config.bestOf);var wins=gamesWonBy(m,g,g);m.games.push({points:[m.points[0],m.points[1]],winner:g});if(wins>=need){m.over=true;m.matchWinner=g;}else{m.points=[0,0];m.server=g;m.side='R';}}return m;}
 function toggleSide(m){if(m.over)return m;m.history.push(snapshot(m));m.side=(m.side==='R')?'L':'R';return m;}
 function changeServer(m){if(m.over)return m;m.history.push(snapshot(m));m.server=1-m.server;m.side='R';return m;}   // "mugs away" etc — swap who serves, no point
-function undo(m){if(m.history.length===0)return m;restore(m,m.history.pop());return m;}
+function undo(m){if(m.locked||m.history.length===0)return m;restore(m,m.history.pop());return m;}
 // Match could not continue (injury, forfeit, any other reason) - all
 // remaining points AND games go to winnerIdx. The current in-progress
 // game is recorded with the loser frozen at their score at the moment of
@@ -449,7 +454,7 @@ function abandonMatch(m,winnerIdx){
   if(m.over) return m;
   m.history.push(snapshot(m));
   var loserIdx=1-winnerIdx, need=gamesNeeded(m.config.bestOf);
-  var finalPts=[0,0]; finalPts[winnerIdx]=m.config.pointsToWin; finalPts[loserIdx]=m.points[loserIdx];
+  var finalPts=[0,0]; finalPts[winnerIdx]=Math.max(m.config.pointsToWin,m.points[loserIdx]+(m.config.winByTwo?2:1)); finalPts[loserIdx]=m.points[loserIdx];
   m.games.push({points:finalPts, winner:winnerIdx});
   while(gamesWonBy(m,winnerIdx)<need){ var sweep=[0,0]; sweep[winnerIdx]=m.config.pointsToWin; m.games.push({points:sweep, winner:winnerIdx}); }
   m.points=[0,0]; m.over=true; m.matchWinner=winnerIdx; m.abandoned=true;
@@ -464,8 +469,8 @@ function matchGamesScore(m){return[gamesWonBy(m,0),gamesWonBy(m,1)];}
 var store=(function(){
   var mem={};
   try{var k='__t';localStorage.setItem(k,'1');localStorage.removeItem(k);
-    return{get:function(k){return localStorage.getItem(k);},set:function(k,v){localStorage.setItem(k,v);},del:function(k){localStorage.removeItem(k);}};}
-  catch(e){return{get:function(k){return k in mem?mem[k]:null;},set:function(k,v){mem[k]=v;},del:function(k){delete mem[k];}};}
+    return{persistent:true,get:function(k){return localStorage.getItem(k);},set:function(k,v){localStorage.setItem(k,v);},del:function(k){localStorage.removeItem(k);},keys:function(){return Object.keys(localStorage);}};}
+  catch(e){return{persistent:false,get:function(k){return k in mem?mem[k]:null;},set:function(k,v){mem[k]=v;},del:function(k){delete mem[k];},keys:function(){return Object.keys(mem);}};}
 })();
 
 /* ==========================================================================
@@ -491,10 +496,11 @@ function jsonp(url){
 
 function callApi(params){
   if(!scriptConfigured())return Promise.reject({reason:'unconfigured'});
+  if(!CONFIG.SHARED_SECRET)return Promise.reject({reason:'auth',msg:'Enter the private club access code in Settings.',retryable:false});
   var qs='secret='+encodeURIComponent(CONFIG.SHARED_SECRET);
   for(var k in params){if(params.hasOwnProperty(k))qs+='&'+k+'='+encodeURIComponent(params[k]);}
   return jsonp(CONFIG.APPS_SCRIPT_URL+'?'+qs).then(function(d){
-    if(!d||d.ok===false)throw{reason:'server',msg:(d&&d.error)||'rejected'};
+    if(!d||d.ok===false)throw{reason:(d&&/access code|Scorer access/.test(d.error||''))?'auth':'server',msg:(d&&d.error)||'rejected',retryable:!!(d&&d.retryable)};
     return d;
   });
 }
@@ -511,18 +517,24 @@ function postResult(payload){
 }
 
 /* offline queue -------------------------------------------------------- */
-var QKEY='cc_queue';
-function loadQueue(){try{return JSON.parse(store.get(QKEY)||'[]');}catch(e){return[];}}
-function saveQueue(q){store.set(QKEY,JSON.stringify(q));}
-function enqueue(p){var q=loadQueue();q.push(p);saveQueue(q);}
+var QKEY='cc_queue',flushInFlight=null;
+function queueKey(id){return 'cc_pending_'+encodeURIComponent(id);}
+function refreshQueueStatus(){if($('queueHint'))$('queueHint').textContent=queueStatus();}
+function loadQueue(){
+ var legacy=[];try{legacy=JSON.parse(store.get(QKEY)||'[]');}catch(e){}
+ legacy.forEach(function(p){var key=queueKey(p.matchId);if(!store.get(key))store.set(key,JSON.stringify(p));});
+ if(legacy.length)store.del(QKEY);
+ return store.keys().filter(function(k){return k.indexOf('cc_pending_')===0;}).map(function(k){try{return JSON.parse(store.get(k));}catch(e){return null;}}).filter(Boolean);
+}
+function saveQueue(q){q.forEach(enqueue);}
+function enqueue(p){store.set(queueKey(p.matchId),JSON.stringify(p));}
 function flushQueue(){
-  var q=loadQueue();if(!q.length)return Promise.resolve(0);
-  var sent=0;
-  return q.reduce(function(chain,item){
-    return chain.then(function(){return postResult(item).then(function(){sent++;});});
-  },Promise.resolve()).then(function(){saveQueue([]);return sent;},
-    function(){/* stop on first failure, keep the rest queued */ 
-      var remaining=loadQueue().slice(sent);saveQueue(remaining);throw{sent:sent};});
+ if(flushInFlight)return flushInFlight;
+ function drain(){var sent=0;return loadQueue().reduce(function(chain,p){return chain.then(function(){
+  return postResult(p).then(function(){store.del(queueKey(p.matchId));sent++;},function(err){p.queueError=err.msg||err.reason||'Connection failed';enqueue(p);});
+ });},Promise.resolve()).then(function(){return sent;});}
+ var work=(navigator.locks&&navigator.locks.request)?navigator.locks.request('court-card-result-sync',drain):drain();
+ flushInFlight=work.then(function(n){flushInFlight=null;refreshQueueStatus();return n;},function(e){flushInFlight=null;throw e;});return flushInFlight;
 }
 
 /* active-match autosave (crash/reopen resilience) --------------------- */
@@ -587,8 +599,8 @@ function refreshFirstServeLabels(){var n=names();$('fs1').textContent=n[0];$('fs
    roster search; an unmatched name can be added as a new player, which
    is written to Supabase immediately (not deferred to match-submit) so
    it's in the roster for every following week too. */
-var allPlayers=[];
-function fetchPlayers(){ return callApi({action:'players'}).then(function(d){return d.players||[];}); }
+var allPlayers=[],playerRecords=[];
+function fetchPlayers(){return callApi({action:'players'}).then(function(d){playerRecords=d.playerRecords||[];return d.players||[];});}
 function loadPlayers(){ if(!scriptConfigured())return; fetchPlayers().then(function(list){allPlayers=list;}).catch(function(){}); }
 
 function lockField(i,on){
@@ -685,6 +697,7 @@ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;
 
 function applyFixture(fx){
   activeFixture=fx;
+  $('formatHint').textContent='Format: '+(fx.pointsToWin||15)+' points, best of '+(fx.bestOf||5)+', '+(fx.winByTwo?'win by two.':'sudden death (no win-by-two).');
   $('n1').value=fx.player1||'';$('n2').value=fx.player2||'';
   plannedNames=[fx.player1||'',fx.player2||''];
   $('sub1').checked=false;$('sub2').checked=false;
@@ -699,11 +712,11 @@ function banner(id,kind,msg){var el=$(id);if(!msg){el.innerHTML='';return;}el.in
 
 function loadFixtures(){
   var host=$('fixtures');host.innerHTML='<div class="hint">Looking for fixtures…</div>';
-  if(!scriptConfigured()){host.innerHTML='<div class="hint">Sheet not connected yet. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Connect sheet</button><br>Or enter players manually below.</div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
+  if(!scriptConfigured()||!CONFIG.SHARED_SECRET){host.innerHTML='<div class="hint">Enter the private club access code to load fixtures. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Enter club code</button></div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
   fetchFixtures().then(renderFixtures).catch(function(err){
     var m=err.msg||err.reason||'offline';
     var hint=(m==='timeout'||m==='network')?' This usually means the URL isn\u2019t the deployed <b>/exec</b> web app (the <b>/dev</b> URL won\u2019t work here), or the deployment\u2019s access isn\u2019t set to <b>Anyone</b>.':'';
-    host.innerHTML='<div class="hint">Couldn\u2019t load fixtures ('+esc(m)+').'+hint+' Use <b>Sheet settings</b> below to check the URL &amp; secret, or enter players manually.</div>';
+    host.innerHTML='<div class="hint">Couldn\u2019t load fixtures ('+esc(m)+').'+hint+' Use <b>Access settings</b> below to check the URL &amp; secret, or enter players manually.</div>';
   });
 }
 $('reloadFx').onclick=loadFixtures;
@@ -718,11 +731,14 @@ $('start').onclick=function(){
   var n=names();
   var cfg={
     players:[{name:n[0],color:chosen.c1},{name:n[1],color:chosen.c2}],
-    pointsToWin:15,
-    winByTwo:false,
-    bestOf:5,
+    pointsToWin:activeFixture?activeFixture.pointsToWin||15:15,
+    winByTwo:activeFixture?!!activeFixture.winByTwo:false,
+    bestOf:activeFixture?activeFixture.bestOf||5:5,
     firstServer:parseInt(pressedVal($('firstServe')),10)
   };
+  if(!activeFixture){alert('Select a fixture before starting a competition match.');return;}
+  if(!n[0]||!n[1]||n[0]===n[1]){alert('Select two different players.');return;}
+  lastGames=0;
   M=createMatch(cfg);
   M.matchId=makeMatchId();
   M.officials={scorer:($('scorer').value||'').trim(),ref:($('ref').value||'').trim()};
@@ -750,14 +766,13 @@ function textSafe(hex){
 
 /* ---- timers (accumulators; a clock only advances while it is running) ---- */
 function fmtT(sec){var m=Math.floor(sec/60),s=sec%60;return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
-function clockNow(){var d=new Date();function p(n){return(n<10?'0':'')+n;}return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());}
+function clockNow(){return new Date().toISOString();}
 function localDate(){var d=new Date();function p(n){return(n<10?'0':'')+n;}return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());}
-function startTimers(){clearInterval(tick);tick=setInterval(tickTimers,1000);paintTimers();}
+var lastTick=Date.now();
+function startTimers(){lastTick=Date.now();clearInterval(tick);tick=setInterval(tickTimers,1000);paintTimers();}
 function tickTimers(){
-  if(!M||M.over)return;var t=M.timing;
-  t.matchSec++;
-  if(t.breakActive)t.breakSec++;else t.gameSec++;
-  paintTimers();
+ var now=Date.now(),elapsed=Math.floor((now-lastTick)/1000);if(elapsed<1)return;lastTick+=elapsed*1000;
+ if(!M||M.over)return;var t=M.timing;t.matchSec+=elapsed;if(t.breakActive)t.breakSec+=elapsed;else t.gameSec+=elapsed;paintTimers();
 }
 function paintTimers(){
   if(!M||!M.timing)return;var t=M.timing;
@@ -920,7 +935,7 @@ function confirmAbandon(winnerIdx){
   $('abandonSheet').classList.remove('active');
   abandonMatch(M,winnerIdx);
   lastGames=M.games.length;
-  goSummary();
+  clearInterval(tick);persistActive();goSummary();
 }
 $('abandonBtn').onclick=openAbandon;
 $('abCancel').onclick=function(){ $('abandonSheet').classList.remove('active'); };
@@ -938,6 +953,10 @@ $('gapGo').onclick=function(){
 /* ==========================================================================
    6. SUMMARY + SAVE
    ========================================================================== */
+function payloadPlayerId(i,name){
+ if(activeFixture&&M.subs&&!M.subs[i]&&activeFixture['player'+(i+1)]===name)return activeFixture['player'+(i+1)+'Id']||'';
+ var matches=playerRecords.filter(function(p){return p.name.toLowerCase()===name.toLowerCase();});return matches.length===1?matches[0].id:'';
+}
 function buildPayload(){
   var gs=matchGamesScore(M);var n=M.config.players;var T=M.timing;
   var lineParts=M.games.map(function(g){return g.points[0]+'-'+g.points[1];});
@@ -950,6 +969,7 @@ function buildPayload(){
     fixtureId:activeFixture?activeFixture.id:'',
     date:localDate(),
     player1:n[0].name,player2:n[1].name,
+    player1Id:payloadPlayerId(0,n[0].name),player2Id:payloadPlayerId(1,n[1].name),
     color1:n[0].color,color2:n[1].color,
     event:activeFixture?activeFixture.event||'':'',
     venue:activeFixture?activeFixture.venue||'':'',
@@ -969,6 +989,8 @@ function buildPayload(){
     winnerIndex:(M.matchWinner!=null?M.matchWinner+1:0),
     durationSec:T.matchSec,
     history:history,
+    abandoned:!!M.abandoned,
+    serviceHistory:(function(){var gs={};(M.log||[]).forEach(function(r){gs[r.game]=(gs[r.game]||'')+'ABCD'[r.server*2+(r.side==='L'?1:0)];});return Object.keys(gs).sort(function(a,b){return a-b;}).map(function(g){return gs[g];}).join('|');})(),
     firstServer:(M.config.firstServer||0)+1
   };
 }
@@ -984,32 +1006,31 @@ function goSummary(){
     body.appendChild(tr);});
   $('tot0').textContent=p.pointsP1;$('tot1').textContent=p.pointsP2;
   $('totTime').textContent=fmtT(p.durationSec||0);
-  $('save').disabled=false;$('save').textContent='Save to sheet';   // reset per match — was staying "Saved ✓" and disabled
+  $('save').disabled=!!M.locked;$('save').textContent=M.locked?'Saved or queued':'Save result';
+  $('undoMatch').disabled=!!M.locked;   // reset per match — was staying "Saved ✓" and disabled
   banner('saveBanner','',null);
   $('queueHint').textContent=queueStatus();
   show('summary');
 }
-function queueStatus(){var q=loadQueue();return q.length?(q.length+' result'+(q.length>1?'s':'')+' waiting to sync.'):'';}
+function queueStatus(){var q=loadQueue();return q.length?(q.length+' result'+(q.length>1?'s':'')+' waiting to sync.'+(q.some(function(p){return p.queueError;})?' Some results need attention. Open pending results below.':'')):'';}
 
 $('save').onclick=function(){
-  var p=pendingPayload;if(!p)return;
-  $('save').disabled=true;$('save').textContent='Saving…';
-  postResult(p).then(function(r){
-    pendingPayload=null;                                     // prevent re-save on double-tap or re-open
-    if(r&&r.duplicate) banner('saveBanner','ok','Already saved (duplicate blocked).');
-    else banner('saveBanner','ok','Saved to sheet.');
-    $('save').textContent='Saved ✓';clearActive();
-  }).catch(function(err){
-    if(err.reason==='unconfigured'){
-      banner('saveBanner','warn','Sheet not connected — add your Apps Script URL to save.');
-      $('save').disabled=false;$('save').textContent='Save to sheet';return;
-    }
-    enqueue(p);pendingPayload=null;                          // queued — don't allow re-save of same payload
-    banner('saveBanner','warn','Offline — result queued. It will sync next time you open with signal.');
-    $('save').textContent='Queued';$('queueHint').textContent=queueStatus();clearActive();
-  });
+ var p=pendingPayload;if(!p||M.locked)return;
+ if(!store.persistent){banner('saveBanner','err','Browser storage is unavailable. Keep this page open; enable storage before saving so your result has a durable backup.');return;}
+ // Persist before sending, including when online, so a closed tab can retry safely.
+ try{enqueue(p);}catch(e){banner('saveBanner','err','Cannot save a durable copy on this device. Keep this page open and free some browser storage.');return;}
+ M.locked=true;persistActive();$('save').disabled=true;$('undoMatch').disabled=true;$('again').disabled=true;$('save').textContent='Saving…';
+ postResult(p).then(function(r){
+  store.del(queueKey(p.matchId));pendingPayload=null;
+  banner('saveBanner','ok',r&&r.duplicate?'Result already saved and verified.':'Result saved.');
+  $('save').textContent='Saved ✓';clearActive();
+ },function(err){
+  p.queueError=err.msg||err.reason||'Connection failed';enqueue(p);pendingPayload=null;
+  banner('saveBanner',err.reason==='server'||err.reason==='auth'?'err':'warn',err.msg||'Connection unavailable. Result stored on this device and will retry when online.');
+  $('save').textContent='Stored — pending sync';clearActive();
+ }).then(function(){$('again').disabled=false;refreshQueueStatus();});
 };
-$('undoMatch').onclick=function(){ if(!M)return; undo(M); show('score'); startTimers(); renderScore(); };
+$('undoMatch').onclick=function(){if(!M||M.locked)return;undo(M);lastGames=M.games.length;show('score');startTimers();renderScore();if(M.timing.breakActive)openGap();};
 $('again').onclick=function(){M=null;activeFixture=null;lastGames=0;clearActive();
   plannedNames=['',''];if($('sub1'))$('sub1').checked=false;if($('sub2'))$('sub2').checked=false;
   lockField(0,false);lockField(1,false);hideSuggest(0);hideSuggest(1);
@@ -1036,6 +1057,7 @@ function applyMatchChrome(cfg){
 }
 function resumeMatch(saved){
   M=saved.M;activeFixture=saved.fixture||null;
+  if(store.get(queueKey(M.matchId)))M.locked=true;
   if(!M.timing)M.timing={matchSec:0,gameSec:0,breakSec:0,breakActive:false,
     games:[{startTs:clockNow(),endTs:'',durationSec:0,breakBeforeSec:0}]};
   applyMatchChrome(M.config);lastGames=M.games.length;
@@ -1067,6 +1089,17 @@ var wakeLock=null;
 async function keepAwake(){try{if('wakeLock' in navigator)wakeLock=await navigator.wakeLock.request('screen');}catch(e){}}
 document.addEventListener('visibilitychange',function(){if(document.visibilityState==='visible')keepAwake();});
 keepAwake();
+
+window.addEventListener('online',function(){if(scriptConfigured())flushQueue().catch(function(){});});
+function showPending(){
+ var q=loadQueue();$('pendingList').innerHTML=q.map(function(p){return '<div class="banner warn"><b>'+esc(p.player1)+' vs '+esc(p.player2)+'</b><br>'+esc(p.scoreLine||'')+'<br>'+esc(p.queueError||'Waiting for connection')+'</div>';}).join('')||'<p>No pending results.</p>';
+ $('pendingSheet').classList.add('active');
+}
+$('pendingOpen').onclick=showPending;
+$('pendingSetup').onclick=showPending;
+$('pendingClose').onclick=function(){$('pendingSheet').classList.remove('active');};
+$('pendingRetry').onclick=function(){this.disabled=true;flushQueue().then(function(){$('pendingRetry').disabled=false;showPending();},function(){$('pendingRetry').disabled=false;});};
+$('pendingExport').onclick=function(){var blob=new Blob([JSON.stringify(loadQueue(),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='court-card-pending-results.json';a.click();setTimeout(function(){URL.revokeObjectURL(url);},1000);};
 </script>
 </body>
 </html>
