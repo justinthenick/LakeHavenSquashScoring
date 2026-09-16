@@ -1,0 +1,32 @@
+begin;
+do $test$
+declare a text:='review-'||gen_random_uuid(); p1 text:=a||'-1';p2 text:=a||'-2';f text:=a||'-f';mid text:=a||'-m';m jsonb;g jsonb;r jsonb;res jsonb;rejected boolean;
+begin
+ insert into public.comps(comp_ref,comp_name,best_of) values(a,'Transactional rollback test',1);
+ insert into public.players(player_id,name) values(p1,'Review Test One'),(p2,'Review Test Two');
+ insert into public.fixtures(fixture_id,comp_ref,player1_id,player2_id,scheduled) values(f,a,p1,p2,'2026-09-01T14:00:00Z');
+ m:=jsonb_build_object('match_id',mid,'fixture_id',f,'source','app','player1_id',p1,'player2_id',p2,'winner_id',p1,'games_p1',1,'games_p2',0,'raw_rally_history','1','score_line','1-0');
+ g:=jsonb_build_array(jsonb_build_object('game_no',1,'points_p1',15,'points_p2',0,'game_winner_id',p1));
+ r:=jsonb_build_array(jsonb_build_object('game_no',1,'rally_no',1,'server_player_id',p1,'rally_winner_id',p1,'box','R','p1_score',1,'p2_score',0));
+ res:=public.cc_save_result(m,g,r);
+ if not (res->>'ok')::boolean or not (select played from public.fixtures where fixture_id=f) then raise exception 'Save test failed';end if;
+ if (select match_date from public.match_log where match_id=mid) <> '2026-09-01T14:00:00Z'::timestamptz then raise exception 'Date test failed';end if;
+ res:=public.cc_save_result(m,g,r);
+ if not (res->>'duplicate')::boolean then raise exception 'Idempotency test failed';end if;
+ rejected:=false;
+ begin perform public.cc_save_result(m||'{"games_p1":0,"games_p2":1}',g,r);exception when sqlstate '22023' then rejected:=true;end;
+ if not rejected then raise exception 'Invalid score accepted';end if;
+ rejected:=false;
+ begin perform public.cc_save_result(m||jsonb_build_object('match_id',mid||'-other'),g,r);exception when unique_violation then rejected:=true;end;
+ if not rejected then raise exception 'Duplicate fixture accepted';end if;
+ rejected:=false;
+ begin perform public.cc_save_result(m||jsonb_build_object('match_id',mid||'-replacement'),g,jsonb_build_array((r->0)||'{"game_no":2}'),true);exception when foreign_key_violation then rejected:=true;end;
+ if not rejected or not exists(select 1 from public.match_log where match_id=mid) or not exists(select 1 from public.rally_log where match_id=mid) then raise exception 'Replacement rollback failed';end if;
+ res:=public.cc_save_result(m||jsonb_build_object('match_id',mid||'-replacement'),g,'[]',true);
+ if exists(select 1 from public.rally_log where match_id=mid) then raise exception 'Replacement left old rallies';end if;
+ res:=public.cc_delete_results(array[mid||'-replacement']);
+ if (res->>'matches')::int<>1 or (select played from public.fixtures where fixture_id=f) then raise exception 'Delete test failed';end if;
+ if has_function_privilege('anon','public.cc_save_result(jsonb,jsonb,jsonb,boolean)','execute') or has_function_privilege('authenticated','public.cc_delete_results(text[])','execute') then raise exception 'Public execution not blocked';end if;
+end $test$;
+select 'PASS: transaction save, duplicate detection, invalid score rejection, fixture uniqueness, failed replacement rollback, rally replacement, archived removal, date preservation, role restrictions' as verification;
+rollback;

@@ -1,0 +1,6 @@
+{
+  "name": "lake-haven-squash-scoring",
+  "private": true,
+  "scripts": { "test": "node tools/test-fixes.cjs" },
+  "devDependencies": { "acorn": "8.15.0" }
+}
