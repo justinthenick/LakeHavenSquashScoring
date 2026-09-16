@@ -1096,6 +1096,9 @@ function getRoster_(comp){
 
     var rRes = sbGet_('roster', 'select=team_id,line,player_id,captain&comp_ref=eq.'+encodeURIComponent(comp));
     if(!rRes.ok) return {ok:false, error:rRes.error};
+    var subsRes=sbGet_('roster_substitutes','select=player_id,line&comp_ref=eq.'+encodeURIComponent(comp));
+    if(!subsRes.ok)return {ok:false,error:'Substitute pool lookup failed: '+subsRes.error};
+    rRes.data=rRes.data.concat(subsRes.data.map(function(r){return {player_id:r.player_id,line:r.line,team_id:null,captain:false,isSub:true};}));
 
     if(!rRes.data.length){
       if(!teamsList.length) return {ok:false, error:'no teams found for '+comp+' - clone or create teams first'};
@@ -1111,7 +1114,7 @@ function getRoster_(comp){
 
     var rows = rRes.data.map(function(r){
       var t = teamInfo[r.team_id]||{}, c = contacts[r.player_id]||{};
-      return { teamNo: t.no||0, teamName: t.name||'', line: r.line||0, player: c.name||'',
+      return { teamNo: r.isSub?'Sub':t.no||0, teamName: r.isSub?'':t.name||'', line: r.line||0, player: c.name||'',
         playerId: r.player_id||'', email: c.email||'', phone: c.phone||'', grade: c.grade||'', captain: !!r.captain };
     });
     return {ok:true, source:'structured', rows:rows, teams:teamsList};
@@ -1165,45 +1168,15 @@ function saveRoster_(comp, rowsJson){
       if(slots[slot])return {ok:false,error:'Team '+row.teamNo+', line '+row.line+' has two players: '+slots[slot]+' and '+row.player+'. Move both players to their intended lines before saving.'};
       slots[slot]=row.player;
     }
-    var names={}; rows.forEach(function(r){ if(r.teamNo && r.teamName && !names[r.teamNo]) names[r.teamNo]=r.teamName; });
+
 
     var sync = syncContacts_(rows);
     if(sync.error) return {ok:false, error:'contact sync failed: '+sync.error, conflicts:sync.conflicts||[]};
 
-    // Ensure every team this roster references exists in `teams` - a live
-    // roster save can introduce a team that's never appeared in Fixtures
-    // yet (unlike the backfill, where teams was derived FROM already-
-    // existing fixtures). Upsert first so the roster insert's FK never
-    // fails on a missing team.
-    var teamRows = Object.keys(names).map(function(no){ return {comp_ref:comp, team_no:parseInt(no,10), team_name:names[no]}; });
-    if(teamRows.length){
-      var teamRes = sbUpsert_('teams', teamRows, 'comp_ref,team_no');
-      if(!teamRes.ok) return {ok:false, error:'team upsert failed: '+teamRes.error};
-    }
-    var teamsRes = sbGet_('teams', 'select=team_id,team_no&comp_ref=eq.'+encodeURIComponent(comp));
-    if(!teamsRes.ok) return {ok:false, error:'teams lookup failed: '+teamsRes.error};
-    var teamIdByNo={}; teamsRes.data.forEach(function(t){ teamIdByNo[t.team_no]=t.team_id; });
-
-    var out_ = rows.filter(function(r){ return r.player && String(r.player).trim(); })
-      .map(function(r){
-        var teamId = teamIdByNo[r.teamNo];
-        return teamId ? { comp_ref:comp, team_id:teamId, line:r.line||0, player_id:r.playerId, captain:!!r.captain } : null;
-      }).filter(function(r){ return r; });
-
-    // Replace only THIS comp's roster rows - delete-then-insert scoped by
-    // comp_ref. Same "never touch other comps" guarantee the Sheets
-    // version achieved by filtering; simpler here since Postgres can
-    // delete by filter directly.
-    var delRes = sbDelete_('roster', 'comp_ref=eq.'+encodeURIComponent(comp));
-    if(!delRes.ok) return {ok:false, error:'roster delete failed: '+delRes.error};
-    if(out_.length){
-      var insRes = sbUpsert_('roster', out_, 'comp_ref,team_id,line');
-      if(!insRes.ok) return {ok:false, error:'roster insert failed: '+insRes.error};
-    }
-
-    var fx = applyRosterToFutureFixtures_(comp, rows);
-    if(fx.error)return {ok:false,error:'Roster saved, but fixture refresh failed: '+fx.error+'. Retry saving to refresh fixtures.'};
-    return {ok:true, count:out_.length, fixturesUpdated:fx.updated, fixturesFrozen:fx.frozen, contactsAdded:sync.added, contactsUpdated:sync.updated};
+    var result=sbRpc_('cc_save_roster',{p_comp:comp,p_rows:rows.filter(function(r){return String(r.player||'').trim();})});
+    if(!result.ok)return {ok:false,error:'Roster was not changed: '+result.error};
+    result.contactsAdded=sync.added;result.contactsUpdated=sync.updated;
+    return result;
   }catch(e){ return {ok:false, error:String(e&&e.message||e)}; }
 }
 

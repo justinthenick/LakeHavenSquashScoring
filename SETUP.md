@@ -7,6 +7,7 @@ Court Card is a GitHub Pages scorer backed by Google Apps Script and Supabase. S
 - `index.html`, `sw.js`, `manifest.json`, and the two icons form the installable scorer.
 - `app-script/` contains the current backend and admin source. Copy these files into the existing Apps Script project. Keep historical onboarding/backfill scripts private; their functions must end in `_`.
 - `database/result_integrity.sql` installs the transactional result and player routines, result archive and indexes on the existing schema. It is not an empty-database bootstrap.
+- Apply `database/roster_integrity.sql` after it to add persistent substitute-pool storage and atomic roster/fixture saves. `database/test_roster.sql` checks moving players into/out of the pool and rollback after a late failure, as the service role; all test changes roll back.
 - `database/test_results.sql` exercises saving, retries, replacement, rollback, removal and role privileges inside a transaction that ends with `ROLLBACK`. Run the complete file together, preferably on a staging clone.
 - `npm ci && npm test` runs the JavaScript regression checks. GitHub Actions runs these checks on pushes and pull requests.
 

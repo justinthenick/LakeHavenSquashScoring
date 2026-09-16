@@ -23,13 +23,16 @@ check('stale player IDs cannot overwrite a different person',()=>{
 check('a single matching legacy name resolves to its existing ID',()=>{
  const row={player:'Other Player',teamNo:1,line:1};assert(!server.syncContacts_([row]).error);assert.equal(row.playerId,'P-C');
 });
-check('roster saves and fixture refresh receive distinct IDs, not a name map',()=>{
- const captured=[];server.sbGet_=(t)=>({ok:true,data:t==='players'?players:t==='teams'?[{team_id:11,team_no:1},{team_id:22,team_no:2}]:[]});
- server.sbDelete_=()=>({ok:true});server.sbUpsert_=(t,rows)=>(captured.push({t,rows}),{ok:true});
- const originalRefresh=server.applyRosterToFutureFixtures_;let refreshed;
- server.applyRosterToFutureFixtures_=(comp,rows)=>(refreshed=rows,{updated:1,frozen:1});
- const r=server.saveRoster_('COMP',[{player:'Same Name',playerId:'P-A',teamNo:2,teamName:'Two',line:1},{player:'Same Name',playerId:'P-B',teamNo:1,teamName:'One',line:1}]);
- assert(r.ok);assert.deepEqual(Array.from(captured.find(x=>x.t==='roster').rows,x=>x.player_id),['P-A','P-B']);assert.equal(refreshed[0].playerId,'P-A');server.applyRosterToFutureFixtures_=originalRefresh;
+check('roster save sends team moves and substitutes through one atomic RPC',()=>{
+ let captured;server.sbGet_=(t)=>({ok:true,data:t==='players'?players:[]});
+ server.sbDelete_=()=>{throw Error('No separate roster deletion');};server.sbUpsert_=()=>{throw Error('No separate team upsert');};
+ server.sbRpc_=(name,args)=>(captured={name,args},{ok:true,count:2,fixturesUpdated:1,fixturesFrozen:1});
+ const r=server.saveRoster_('COMP',[{player:'Same Name',playerId:'P-A',teamNo:'Sub',teamName:'Team 7',line:1},{player:'Same Name',playerId:'P-B',teamNo:1,teamName:'One',line:1}]);
+ assert(r.ok);assert.equal(captured.name,'cc_save_roster');assert.equal(captured.args.p_rows[0].teamNo,'Sub');assert.deepEqual(Array.from(captured.args.p_rows,x=>x.playerId),['P-A','P-B']);
+});
+check('substitute pool reload preserves identity and Sub classification',()=>{
+ server.sbGet_=(t)=>({ok:true,data:t==='teams'?[{team_id:11,team_no:1,team_name:'One'}]:t==='roster'?[]:t==='roster_substitutes'?[{player_id:'P-A',line:2}]:players});
+ const r=server.getRoster_('COMP');assert(r.ok);assert.equal(r.rows.length,1);assert.equal(r.rows[0].teamNo,'Sub');assert.equal(r.rows[0].playerId,'P-A');assert.equal(r.rows[0].teamName,'');
 });
 check('occupied team lines fail before deleting or changing contacts',()=>{
  server.sbGet_=()=>{throw Error('must validate slots first');};
