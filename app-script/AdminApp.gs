@@ -1658,7 +1658,7 @@ function buildCompetitionStandings_(data, rules){
   // Infer a bye only when a complete round uses every other team.
   if(teamNos.length%2===1&&missing.length===1)byes[r]=missing[0];
  });
- fx.forEach(function(f){var m=results[f.fixture_id];if(!m)return;var r=Number(f.round),g1=Number(m.games_p1)||0,g2=Number(m.games_p2)||0;
+ fx.forEach(function(f){var m=results[f.fixture_id];if(!m){if(f.played)warnings.push('Played fixture has no saved result: '+f.fixture_id);return;}var r=Number(f.round),g1=Number(m.games_p1)||0,g2=Number(m.games_p2)||0;
   var walk=/walkover|scratched/i.test(m.score_line||''), dbl=walk&&g1===0&&g2===0;
   var t1=ts[f.team1_id],t2=ts[f.team2_id];if(!t1||!t2){warnings.push('Missing team: '+f.fixture_id);return;}
   var key=r+':'+f.team1_id+':'+f.team2_id,t=ties[key]||(ties[key]={r:r,a:t1.team_no,b:t2.team_no,ga:0,gb:0,wa:0,wb:0,scr:0,count:0,expected:fx.filter(function(x){return Number(x.round)===r&&x.team1_id===f.team1_id&&x.team2_id===f.team2_id;}).length});
@@ -1696,6 +1696,7 @@ function getStandings_(comp){return buildCompetitionStandings_(loadCompetitionDa
 function scheduledPlayerCell_(s,rp,r){
  var scheduled=s.scheduled[rp.playerId]&&s.scheduled[rp.playerId][r];
  if(scheduled&&scheduled.length>1)return 'CHECK';
+ if(scheduled&&scheduled.some(function(x){return x.fixture.played;})&&!(s.playerRounds[rp.playerId]&&s.playerRounds[rp.playerId].rounds[r]))return 'CHECK';
  var cell=s.playerRounds[rp.playerId]&&s.playerRounds[rp.playerId].rounds[r];
  if(cell)return cell.kind==='value'?cell.value:(cell.kind==='conflict'?'CHECK':'AWAY');
  if(!scheduled&&s.byes[r]===rp.teamNo)return 'BYE';
