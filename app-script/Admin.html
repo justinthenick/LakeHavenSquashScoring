@@ -177,7 +177,7 @@
       <div class="eyebrow" style="margin-bottom:8px">Results, standings &amp; distribution</div>
       <div style="margin-top:4px"><button class="ghost" id="standingsBtn">View standings</button> <button class="ghost" id="reportBtn">View comp report</button> <button class="ghost" id="openDraw">Open draw / results ↗</button></div>
     </div>
-    <div id="standings"></div>
+    <div class="card"><label class="f">Results output workbook ID or Google Sheets URL</label><input id="outputWorkbook" style="width:100%" placeholder="Configure this competition's workbook"><button class="ghost" id="outputSave">Save output</button><p id="outputStatus" class="hint"></p><label class="f">Round to distribute</label><input id="outputRound" type="number" min="1" style="width:100px"><button class="cta" id="outputPreview" disabled>Preview results to output</button><div id="outputReview"></div></div><div id="standings"></div>
     <div id="reportwrap"></div>
     <div class="card">
       <div class="eyebrow" style="margin-bottom:8px">Manage results — delete / re-open a committed rubber</div>
@@ -209,7 +209,7 @@
           <input id="obStart" type="date"></div>
         <button class="cta" id="obGo" style="align-self:flex-end">Clone comp</button>
       </div>
-      <div id="obResult" style="margin-top:12px"></div>
+      <label class="f">New competition output workbook (optional)</label><input id="obOutput" style="width:100%" placeholder="New workbook ID or URL"><p class="hint">The source competition's output is not copied. Configure a separate Retro Results workbook now or in Results before distributing.</p><div id="obResult" style="margin-top:12px"></div>
     </div>
   </section>
 
@@ -235,7 +235,7 @@ function switchTab(id){
   if(id==='draw')renderDrawTab();
   if(id==='calendar')renderCalendarTab();
   if(id==='subs')renderSubsTab();
-  if(id==='results')loadMrRounds();
+  if(id==='results'){loadMrRounds();loadOutputConfig();}
   if(id==='onboard')renderOnboardTab();
 }
 (function(){var tabs=document.querySelectorAll('.tab');
@@ -273,6 +273,7 @@ function renderCompReport(r){
   var rounds=r.rounds||[];
   var h='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><div class="banner ok" style="flex:1;margin:0">Comp report — '+esc(r.comp)+'</div>'+
     '<button class="ghost" id="closeReport" style="margin-left:10px">Close ✕</button></div>';
+  if(r.warnings&&r.warnings.length)h+='<div class="banner warn">'+r.warnings.map(esc).join('<br>')+'</div>';
   if(r.rosterError) h+='<div class="banner warn" style="margin-top:12px">'+esc(r.rosterError)+'</div>';
   h+='<div class="hint" style="margin-top:8px">Tap any round score to see that rubber\u2019s games, scan link, and rally-by-rally detail (when available).</div>';
 
@@ -396,7 +397,7 @@ $('obGo').onclick=function(){
   }).withFailureHandler(function(e){
     $('obGo').disabled=false; $('obGo').textContent='Clone comp';
     $('obResult').innerHTML='<div class="banner warn">'+esc(e.message)+'</div>';
-  }).cloneComp(source, code, name, start);
+  }).cloneComp(source, code, name, start, $('obOutput').value);
 };
 
 function renderRoster(res){
@@ -678,7 +679,7 @@ function loadCompsDropdown(selectCode){
       o.dataset.target=c.pointsToWin;sel.appendChild(o);});
     if(selectCode) sel.value=selectCode;
     TARGET=parseInt(sel.options[sel.selectedIndex].dataset.target,10)||15;
-    loadMrRounds();                                            // comp now known — populate round picker
+    loadMrRounds(); loadOutputConfig();                        // comp now known — populate round picker
   }).withFailureHandler(function(e){$('comp').innerHTML='<option value="">Error: '+esc(e.message)+'</option>';})
     .getActiveComps();
 }
@@ -738,11 +739,8 @@ $('mrLoad').onclick=function(){
   $('mrList').innerHTML='<div class="hint">Loading…</div>';
   google.script.run.withSuccessHandler(renderMrList).withFailureHandler(function(e){$('mrList').innerHTML='<div class="banner warn">'+esc(e.message)+'</div>';}).getCommittedRubbers($('comp').value, rnd);
 };
-google.script.run.withSuccessHandler(function(r){ DRAWURL=(r&&r.url)||''; }).getDrawUrl();
-$('openDraw').onclick=function(){
-  if(DRAWURL){ window.open(DRAWURL,'_blank'); }
-  else { google.script.run.withSuccessHandler(function(r){ DRAWURL=(r&&r.url)||''; if(DRAWURL)window.open(DRAWURL,'_blank'); else alert('DRAW_ID is not set in the admin project.'); }).getDrawUrl(); }
-};
+
+$('openDraw').onclick=function(){google.script.run.withSuccessHandler(function(r){if(r.url)window.open(r.url,'_blank');else alert(r.message);}).withFailureHandler(function(e){alert(e.message);}).getOutputConfig($('comp').value);};
 function loadStandings(){
   var comp=$('comp').value; if(!comp)return;
   var b=$('standingsBtn');b.disabled=true;b.textContent='Loading…';
@@ -756,7 +754,7 @@ function renderStandings(res){
   STANDINGS=res;
   var h='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><div class="banner ok" style="flex:1;margin:0">Standings — '+esc(res.comp)+'</div>'+
     '<button class="ghost" id="closeStandings" style="margin-left:10px">Close ✕</button></div>'+
-    '<div class="banner info" style="margin-top:12px">'+esc(res.notes.individual)+'. Team points = games won +2 to the match winner, floor 1 ('+esc(res.notes.scratch)+').'+(res.scratches?' '+res.scratches+' scratch rubber(s).':'')+' Standings refresh into the draw workbook automatically on each commit.</div>';
+    '<div class="banner info" style="margin-top:12px">'+esc(res.notes.individual)+'. Team points = games won +2 to the match winner, floor 1 ('+esc(res.notes.scratch)+').'+(res.scratches?' '+res.scratches+' scratch rubber(s).':'')+' Use Preview results to output to confirm and send a completed round to Retro Results.</div>';
   h+='<h3 style="margin:14px 0 6px;font-size:15px">Team ladder</h3><div style="overflow-x:auto"><table><thead><tr>'+
     '<th style="text-align:left">Team</th><th title="team matches played">P</th><th title="matches won">W</th><th title="matches lost">L</th><th title="matches drawn">D</th>'+
     '<th title="total games this team\u2019s players won">Games Won</th><th title="games won against this team">Games Lost</th><th>Points</th></tr></thead><tbody>';
@@ -1137,6 +1135,13 @@ function renderCommit(res){
   h+='</div>';
   $('stagewrap').innerHTML=h;
 }
+
+var outputGeneration=0;
+function outputError(e){$('outputStatus').textContent=e.message||e.error||String(e);$('outputPreview').disabled=true;}
+function loadOutputConfig(){var c=$('comp').value,g=++outputGeneration;$('outputPreview').disabled=true;$('outputReview').innerHTML='';google.script.run.withSuccessHandler(function(r){if(g!==outputGeneration||c!==$('comp').value)return;$('outputWorkbook').value=r.workbookId;$('outputStatus').textContent=r.message;$('outputPreview').disabled=!r.workbookId;}).withFailureHandler(outputError).getOutputConfig(c);}
+$('comp').addEventListener('change',loadOutputConfig);
+$('outputSave').onclick=function(){var c=$('comp').value;this.disabled=true;google.script.run.withSuccessHandler(function(){ $('outputSave').disabled=false;if(c===$('comp').value)loadOutputConfig();}).withFailureHandler(function(e){$('outputSave').disabled=false;outputError(e);}).saveOutputConfig(c,$('outputWorkbook').value);};
+$('outputPreview').onclick=function(){var c=$('comp').value,r=Number($('outputRound').value),button=this;button.disabled=true;$('outputReview').innerHTML='Checking results and scans…';google.script.run.withSuccessHandler(function(p){button.disabled=false;if(c!==$('comp').value)return;var h='<p>'+p.fixtures+' fixtures checked. '+p.changes.length+' changed cells in Retro Results, round '+p.round+'.</p>';if(p.changes.length)h+='<div style="max-height:300px;overflow:auto"><table><tr><th>Cell / player or team</th><th>Existing</th><th>New</th></tr>'+p.changes.map(function(x){return '<tr><td>'+esc(x.cell+' '+x.name)+'</td><td>'+esc(x.before)+'</td><td>'+esc(x.after)+'</td></tr>';}).join('')+'</table></div><button class="cta" id="outputSend">Send results to output</button>';else h+='<p>Already up to date.</p>';$('outputReview').innerHTML=h;if($('outputSend'))$('outputSend').onclick=function(){if(!confirm('Send round '+p.round+' results to this competition’s Retro Results sheet? Existing values for this round will be updated. A backup will be created.'))return;this.disabled=true;google.script.run.withSuccessHandler(function(done){$('outputReview').innerHTML='<div class="banner ok">'+(done.unchanged?'Already up to date.':'Round '+p.round+' sent successfully.')+' <a target="_blank" href="'+esc(done.url)+'">Open output</a></div>';}).withFailureHandler(function(e){$('outputReview').innerHTML='<div class="banner warn">'+esc(e.message)+' Preview again to retry.</div>';}).sendRoundOutput(c,p.round,p.token);};}).withFailureHandler(function(e){button.disabled=false;$('outputReview').innerHTML='<div class="banner warn">'+esc(e.message)+'</div>';}).previewRoundOutput(c,r);};
 </script>
 </body>
 </html>

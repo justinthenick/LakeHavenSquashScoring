@@ -68,12 +68,14 @@ function doPost(e) {
 // cell have a date value in it" - a genuine simplification the relational
 // schema buys for free, not just a straight port.
 function readFixtures_() {
-  var res = sbGet_('fixtures', 'select=fixture_id,round,line,scheduled,comp_ref,team1_id,team2_id,player1_id,player2_id&played=eq.false&player1_id=not.is.null');
+  var res = sbGet_('fixtures', 'select=fixture_id,round,line,scheduled,comp_ref,team1_id,team2_id,player1_id,player2_id,played&player1_id=not.is.null');
   if (!res.ok) throw new Error('readFixtures: ' + res.error);
   var fixtures = res.data;
   if (!fixtures.length) return [];
 
+  var statuses=fixtureStatuses_(fixtures);
   var playerIds = {}, teamIds = {};
+  Object.keys(statuses).forEach(function(k){var st=statuses[k];if(st.actual1Id)playerIds[st.actual1Id]=true;if(st.actual2Id)playerIds[st.actual2Id]=true;});
   fixtures.forEach(function(f){
     if (f.player1_id) playerIds[f.player1_id] = true;
     if (f.player2_id) playerIds[f.player2_id] = true;
@@ -105,6 +107,7 @@ function readFixtures_() {
       catch (e) { sched = String(f.scheduled).slice(0, 10); }
     }
     return {
+      status:statuses[f.fixture_id].status,result:statuses[f.fixture_id].result,actualPlayers:statuses[f.fixture_id].actualNames||[playerNames[statuses[f.fixture_id].actual1Id]||'',playerNames[statuses[f.fixture_id].actual2Id]||''],
       id: f.fixture_id, player1Id:f.player1_id, player2Id:f.player2_id,
       pointsToWin:(rules[f.comp_ref]||{}).points_per_game||15,winByTwo:!!(rules[f.comp_ref]||{}).win_by_two,bestOf:(rules[f.comp_ref]||{}).best_of||5,
       player1: playerNames[f.player1_id] || '', player2: playerNames[f.player2_id] || '',
@@ -151,12 +154,12 @@ function writeResult_(b){
  var pid1=resolveScorerIdentity_(b.player1Id,b.player1),pid2=resolveScorerIdentity_(b.player2Id,b.player2);
  if(!pid1||!pid2||pid1===pid2)return {ok:false,error:'Select two different registered players.',retryable:false};
  var win=Number(b.winnerIndex)||((b.winner===b.player1)?1:((b.winner===b.player2)?2:0));
- var match={match_id:String(b.matchId),fixture_id:String(b.fixtureId),comp_ref:fx.compRef,match_date:fx.scheduled||toDate_(b.date),player1_id:pid1,player2_id:pid2,sub1:!!b.sub1,sub2:!!b.sub2,games_p1:b.gamesP1,games_p2:b.gamesP2,winner_id:win===1?pid1:(win===2?pid2:null),score_line:b.scoreLine||'',duration_sec:b.durationSec||0,scan_link:'',source:'app',raw_rally_history:b.history||''};
+ var match={match_id:String(b.matchId),fixture_id:String(b.fixtureId),comp_ref:fx.compRef,match_date:fx.scheduled||toDate_(b.date),player1_id:pid1,player2_id:pid2,sub1:!!b.sub1||(!!fx.player1Id&&pid1!==fx.player1Id),sub2:!!b.sub2||(!!fx.player2Id&&pid2!==fx.player2Id),games_p1:b.gamesP1,games_p2:b.gamesP2,winner_id:win===1?pid1:(win===2?pid2:null),score_line:b.scoreLine||'',duration_sec:b.durationSec||0,scan_link:'',source:'app',raw_rally_history:b.history||''};
  var games=(b.games||[]).map(function(g,i){return {game_no:i+1,points_p1:g.p1,points_p2:g.p2,game_winner_id:g.winner===1?pid1:(g.winner===2?pid2:null),time_start:combineDateTime_(b.date,g.timeStart),time_end:combineDateTime_(b.date,g.timeEnd),duration:g.duration||0,break_time:g.breakTime||0,scorer:b.scorer||'',ref:b.ref||''};});
- return sbRpc_('cc_save_result',{p_match:match,p_games:games,p_rallies:writeRallyLog_(b.matchId,b,pid1,pid2),p_replace:false});
+ return sbRpc_('cc_submit_queued_result',{p_match:match,p_games:games,p_rallies:writeRallyLog_(b.matchId,b,pid1,pid2)});
 }
 function resolveScorerIdentity_(id,name){
- if(id){var r=sbGet_('players','select=player_id&player_id=eq.'+encodeURIComponent(id));requireSb_(r);return r.data.length?r.data[0].player_id:'';}
+ if(id){var aliases=requireSb_(sbGet_('player_aliases','select=player_id&alias_id=eq.'+encodeURIComponent(id))).data;if(aliases.length)id=aliases[0].player_id;var r=sbGet_('players','select=player_id&player_id=eq.'+encodeURIComponent(id));requireSb_(r);return r.data.length?r.data[0].player_id:'';}
  return contactId_(name);
 }
 
@@ -291,9 +294,9 @@ function fixtureHasResult_(fixtureId) {
 
 function fixtureInfo_(fixtureId){
   if(!fixtureId) return null;
-  var res = sbGet_('fixtures', 'select=scheduled,comp_ref&fixture_id=eq.'+encodeURIComponent(fixtureId));
+  var res = sbGet_('fixtures', 'select=scheduled,comp_ref,player1_id,player2_id&fixture_id=eq.'+encodeURIComponent(fixtureId));
   if(!res.ok || !res.data.length) return null;
-  return { scheduled: res.data[0].scheduled, compRef: res.data[0].comp_ref };
+  return { scheduled: res.data[0].scheduled, compRef: res.data[0].comp_ref,player1Id:res.data[0].player1_id,player2Id:res.data[0].player2_id };
 }
 function markPlayed_(fixtureId) {
   if (!fixtureId) return;
@@ -361,4 +364,21 @@ function out_(obj, e) {
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function fixtureProgress_(b){
+ var id=String(b.fixtureId||''),session=String(b.matchId||'');if(!id||!session||id.length>120||session.length>160)throw new Error('Invalid fixture progress.');
+ var fx=requireSb_(sbGet_('fixtures','select=played&fixture_id=eq.'+encodeURIComponent(id))).data;
+ if(!fx.length||fx[0].played)return {ok:true,finished:true};
+ function pair(v){if(!Array.isArray(v)||v.length!==2||v.some(function(n){return !Number.isInteger(n)||n<0||n>99;}))throw new Error('Invalid progress score.');return v;}
+ var p={matchId:session,games:pair(b.games),points:pair(b.points),players:(b.players||[]).slice(0,2).map(function(n){return String(n).slice(0,100);}),updated:Date.now()};
+ var lock=LockService.getScriptLock();lock.waitLock(3000);try{var cache=CacheService.getScriptCache(),key='progress:'+id,old=cache.get(key);if(old&&JSON.parse(old).matchId!==session)return {ok:false,error:'Another device is scoring this fixture.'};cache.put(key,JSON.stringify(p),180);}finally{lock.releaseLock();}
+ return {ok:true};
+}
+function fixtureStatuses_(fixtures){
+ var logs=requireSb_(sbGet_('match_log','select=fixture_id,games_p1,games_p2,score_line,player1_id,player2_id')).data,byId={};logs.forEach(function(m){byId[m.fixture_id]=m;});
+ var cache=CacheService.getScriptCache(),cached={};for(var i=0;i<fixtures.length;i+=100){var part=cache.getAll(fixtures.slice(i,i+100).map(function(f){return 'progress:'+f.fixture_id;}));Object.keys(part).forEach(function(k){cached[k]=part[k];});}
+ var out={};fixtures.forEach(function(f){var m=byId[f.fixture_id],p=cached['progress:'+f.fixture_id];p=p?JSON.parse(p):null;
+  out[f.fixture_id]=m?{status:/scratched/i.test(m.score_line||'')?'Scratched':'Played',result:m.score_line||m.games_p1+'–'+m.games_p2,actual1Id:m.player1_id,actual2Id:m.player2_id}:f.played?{status:'Needs review',result:'Played flag; result missing'}:p?{status:'Underway',result:p.games.join('–')+' games · '+p.points.join('–')+' points',actualNames:p.players,updated:p.updated}:{status:'Not yet played',result:''};
+ });return out;
 }

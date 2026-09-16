@@ -266,7 +266,7 @@
       <select id="fxTeam"><option value="">All teams</option></select>
       <select id="fxLine"><option value="">All lines</option><option value="1">Line 1</option><option value="2">Line 2</option><option value="3">Line 3</option><option value="4">Line 4</option><option value="5">Line 5</option></select>
     </div>
-    <input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
+    <label style="display:block;margin:8px 0"><input id="hidePlayed" type="checkbox"> Hide played / scratched fixtures</label><input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
     <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
     <button class="cta ghost" id="reloadFx">Reload fixtures</button>
     <button class="cta ghost" id="pendingSetup">View pending results / retry sync</button>
@@ -667,6 +667,7 @@ function applyFixtureFilter(){
   syncSelect('fxTeam','All teams',uniqSorted(teams));
   var comp=$('fxComp').value, team=$('fxTeam').value, line=$('fxLine').value, q=($('fxSearch').value||'').trim().toLowerCase();
   var shown=onDate.filter(function(f){
+    if($('hidePlayed').checked&&['Played','Scratched'].indexOf(f.status)>=0)return false;
     if(comp&&String(f.comp||'')!==comp)return false;
     if(team&&f.team1!==team&&f.team2!==team)return false;
     if(line&&String(f.line||'')!==String(line))return false;
@@ -681,15 +682,15 @@ function drawFixtures(list,note){
   var host=$('fixtures');host.innerHTML=note?('<div class="hint">'+esc(note)+'</div>'):'';
   if(!list.length){host.innerHTML+='<div class="hint">No matching fixtures.</div>';return;}
   list.forEach(function(fx){
-    var b=document.createElement('button');b.className='fx';
+    var b=document.createElement('button');b.className='fx';b.style.borderLeft='5px solid '+(fx.status==='Played'?'#238755':fx.status==='Underway'?'#d28a13':fx.status==='Scratched'?'#9c5665':'#8c99aa');
     var bits=[];
     if(fx.scheduled)bits.push(fx.scheduled);
     if(fx.round)bits.push('R'+fx.round+(fx.line?' L'+fx.line:''));
     if(fx.team1&&fx.team2)bits.push(fx.team1+' v '+fx.team2);
     var meta=bits.join(' · ');
     b.innerHTML='<span>'+esc(fx.player1||'?')+' vs '+esc(fx.player2||'?')+
-      (meta?'<small>'+esc(meta)+'</small>':'')+'</span><span>›</span>';
-    b.onclick=function(){applyFixture(fx);};
+      (meta?'<small>'+esc(meta)+'</small>':'')+'<small><b>'+esc(fx.status||'Not yet played')+'</b>'+ (fx.result?' · '+esc(fx.result):'')+'</small>'+((fx.actualPlayers||[]).some(function(n,i){return n&&n!==fx['player'+(i+1)];})?'<small>Played by '+esc(fx.actualPlayers.join(' vs '))+'</small>':'')+'</span><span>›</span>';
+    b.onclick=function(){if(['Played','Scratched','Needs review'].indexOf(fx.status)>=0){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');return;}applyFixture(fx);};
     host.appendChild(b);
   });
 }
@@ -720,6 +721,7 @@ function loadFixtures(){
   });
 }
 $('reloadFx').onclick=loadFixtures;
+$('hidePlayed').onchange=applyFixtureFilter;
 $('fxSearch').oninput=applyFixtureFilter;
 $('fxDate').onchange=applyFixtureFilter;
 $('fxComp').onchange=applyFixtureFilter;
@@ -791,7 +793,7 @@ function renderScore(){
     lastGames=M.games.length;
     if(!M.over){M.timing.breakActive=true;M.timing.breakSec=0;openGap();}
   }
-  persistActive();
+  persistActive();publishProgress();
   $('pts0').textContent=M.points[0];$('pts1').textContent=M.points[1];
   var gs=matchGamesScore(M);$('gamesLine').textContent=gs[0]+'–'+gs[1];
   $('gameNo').textContent=M.games.length+1;
@@ -1100,6 +1102,15 @@ $('pendingSetup').onclick=showPending;
 $('pendingClose').onclick=function(){$('pendingSheet').classList.remove('active');};
 $('pendingRetry').onclick=function(){this.disabled=true;flushQueue().then(function(){$('pendingRetry').disabled=false;showPending();},function(){$('pendingRetry').disabled=false;});};
 $('pendingExport').onclick=function(){var blob=new Blob([JSON.stringify(loadQueue(),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='court-card-pending-results.json';a.click();setTimeout(function(){URL.revokeObjectURL(url);},1000);};
+
+var progressSentAt=0,progressBusy=false;
+function publishProgress(){
+ if(!M||M.over||!activeFixture||progressBusy||Date.now()-progressSentAt<15000||!navigator.onLine)return;
+ progressSentAt=Date.now();progressBusy=true;
+ callApi({action:'progress',data:JSON.stringify({fixtureId:activeFixture.id,matchId:M.matchId,games:matchGamesScore(M),points:M.points,players:M.config.players.map(function(p){return p.name;})})}).catch(function(e){console.warn('Live fixture status not updated',e.msg||e.reason||'offline');}).finally(function(){progressBusy=false;});
+}
+setInterval(function(){if(M&&!M.over)publishProgress();},30000);
+setInterval(function(){if(document.visibilityState==='visible'&&$('setup').classList.contains('active')&&CONFIG.SHARED_SECRET)fetchFixtures().then(renderFixtures).catch(function(){});},30000);
 </script>
 </body>
 </html>

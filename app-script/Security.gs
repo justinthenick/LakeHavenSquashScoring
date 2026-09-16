@@ -63,3 +63,11 @@ function getRallyLog(){assertAdmin_();return getRallyLog_.apply(null,arguments);
 function getCommittedRubbers(){assertAdmin_();return getCommittedRubbers_.apply(null,arguments);}
 function deleteRubbers(){assertAdmin_();return deleteRubbers_.apply(null,arguments);}
 function getContacts(){assertAdmin_();return getContacts_.apply(null,arguments);}
+
+function getOutputConfig(){assertAdmin_();return getOutputConfig_.apply(null,arguments);}
+
+function saveOutputConfig(){assertAdmin_();return saveOutputConfig_.apply(null,arguments);}
+
+function previewRoundOutput(){assertAdmin_();return previewRoundOutput_.apply(null,arguments);}
+
+function sendRoundOutput(){assertAdmin_();return sendRoundOutput_.apply(null,arguments);}

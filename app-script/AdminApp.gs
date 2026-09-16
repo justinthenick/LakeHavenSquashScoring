@@ -43,6 +43,7 @@ function doGet(e) {
       var action = e.parameter.action;
       if (action === 'fixtures') return out_({ ok:true, fixtures: readFixtures_() }, e);
       if (action === 'result')   return out_(writeResult_(JSON.parse(e.parameter.data || '{}')), e);
+      if (action === 'progress') return out_(fixtureProgress_(JSON.parse(e.parameter.data||'{}')),e);
       if (action === 'tie')      return out_(tieResults_(e.parameter.fixtureId || ''), e);
       if (action === 'players')  return out_({ ok:true, players: listPlayerNames_().map(function(p){return p.name;}), playerRecords:listPlayerNames_() }, e);
       if (action === 'addPlayer') return out_(resolveOrAddPlayer_(e.parameter.name || ''), e);
@@ -131,7 +132,8 @@ function getAllComps_(){
 // applyRosterToFutureFixtures already fills player1_id/player2_id onto
 // every unplayed fixture from there, so cloning only needs to set up team
 // numbers/names and empty fixture shells with the right dates.
-function cloneComp_(sourceComp, newComp, newCompName, startDate){
+function cloneComp_(sourceComp, newComp, newCompName, startDate, outputWorkbook){
+  var outputId=outputWorkbookId_(outputWorkbook);if(outputId)validateOutputWorkbook_(outputId);
   newComp = String(newComp||'').trim();
   if(!newComp) return {ok:false, error:'new comp code is required'};
   var dup = sbGet_('comps', 'select=comp_ref&comp_ref=eq.'+encodeURIComponent(newComp));
@@ -176,7 +178,7 @@ function cloneComp_(sourceComp, newComp, newCompName, startDate){
   }
 
   var compIns = sbUpsert_('comps', [{
-    comp_ref:newComp, comp_name:newCompName||newComp, active:true,
+    comp_ref:newComp, comp_name:newCompName||newComp, active:true, output_workbook_id:outputId||null,
     points_per_game:src.points_per_game, win_by_two:src.win_by_two, best_of:src.best_of
   }]);
   if(!compIns.ok) return {ok:false, error:'comp insert failed: '+compIns.error};
@@ -571,6 +573,7 @@ function commitResults_(payload) {
   var comp = payload.comp, round = payload.round, rules = getRules_(comp), gtw = Math.floor((rules.bestOf||5)/2)+1;
   var scan = payload.image ? saveScan_(payload.image, payload.mime, comp, round) : {url:'',error:''};
   var scanUrl = scan.url;
+  if(payload.image&&!scanUrl)throw new Error('Scan upload failed: '+(scan.error||'No scan link returned'));
 
   // Which fixtures already have an APP-scored (not scan-based) result -
   // FILTERED BY COMP, not global (original version had a bug where unrelated
@@ -584,13 +587,13 @@ function commitResults_(payload) {
   var cIdx = {};
   var pRes = sbGet_('players', 'select=player_id,name');
   requireSb_(pRes);
-  if(pRes.ok) pRes.data.forEach(function(p){ var nm=String(p.name||'').trim(); if(nm) cIdx[_normName_(nm)]=p.player_id; });
-  function cid(name){ var nm=String(name||'').trim(); return nm ? (cIdx[_normName_(nm)]||'') : ''; }
+  if(pRes.ok) pRes.data.forEach(function(p){ var nm=String(p.name||'').trim(); if(nm)(cIdx[_normName_(nm)]||(cIdx[_normName_(nm)]=[])).push(p.player_id); });
+  function cid(name,preferred){var nm=String(name||'').trim(),hits=cIdx[_normName_(nm)]||[];if(preferred&&hits.indexOf(preferred)>=0)return preferred;if(hits.length>1)throw new Error('Ambiguous scan player '+nm+': '+hits.join(', ')+'. Resolve the identity before committing.');return hits[0]||'';}
 
-  var schedMap = {};
-  var fxRes = sbGet_('fixtures', 'select=fixture_id,scheduled&comp_ref=eq.'+encodeURIComponent(comp));
+  var schedMap = {},fixturePlayers={};
+  var fxRes = sbGet_('fixtures', 'select=fixture_id,scheduled,player1_id,player2_id&comp_ref=eq.'+encodeURIComponent(comp));
   requireSb_(fxRes);
-  if(fxRes.ok) fxRes.data.forEach(function(f){ schedMap[f.fixture_id]=f.scheduled; });
+  if(fxRes.ok) fxRes.data.forEach(function(f){ schedMap[f.fixture_id]=f.scheduled;fixturePlayers[f.fixture_id]=f; });
 
   var playedDate = payload.date;
   var committed=[], skipped=[], removed=[], ties={};
@@ -613,7 +616,8 @@ function commitResults_(payload) {
 
     if(l.appLink){
       if(appFix[fid]){
-        sbUpdate_('match_log', 'fixture_id=eq.'+encodeURIComponent(fid), {scan_link:scanUrl});
+        if(!scanUrl)throw new Error('A scanned sheet is required to link this result.');
+        requireSb_(sbUpdate_('match_log', 'fixture_id=eq.'+encodeURIComponent(fid), {scan_link:scanUrl}));
         existingMatchIdsForFixture(fid).forEach(function(mid){ sbUpdate_('game_log','match_id=eq.'+encodeURIComponent(mid), {scan_link:scanUrl}); });
         skipped.push({fixtureId:fid,reason:'app entry',scanLinked:true});
       } else { skipped.push({fixtureId:fid,reason:'app link requested but no app entry'}); }
@@ -625,7 +629,8 @@ function commitResults_(payload) {
       return;
     }
     if(!l.override && appFix[fid]){
-      sbUpdate_('match_log', 'fixture_id=eq.'+encodeURIComponent(fid), {scan_link:scanUrl});
+      if(!scanUrl)throw new Error('A scanned sheet is required to link this result.');
+      requireSb_(sbUpdate_('match_log', 'fixture_id=eq.'+encodeURIComponent(fid), {scan_link:scanUrl}));
       skipped.push({fixtureId:fid, reason:'app entry exists', scanLinked:true});
       return;
     }
@@ -650,11 +655,12 @@ function commitResults_(payload) {
     // has a foreign key on match_id with no auto-create, so writing game_log
     // first fails with a 23503 FK violation and the whole line gets silently
     // skipped with no visible error to the user.
+    var planned=fixturePlayers[fid]||{},pid1=cid(pl1,l.home.sub?null:planned.player1_id),pid2=cid(pl2,l.away.sub?null:planned.player2_id);
     var matchRow = {override_app:!!l.override,
       match_id:mid, fixture_id:fid, comp_ref:comp, match_date:date, committed_ts:now,
-      player1_id:cid(pl1)||null, player2_id:cid(pl2)||null,
-      sub1:!!l.home.sub, sub2:!!l.away.sub,
-      games_p1:g1, games_p2:g2, winner_id:cid(winner)||null, score_line:line, duration_sec:0,
+      player1_id:pid1||null, player2_id:pid2||null,
+      sub1:!!l.home.sub||pid1!==planned.player1_id, sub2:!!l.away.sub||pid2!==planned.player2_id,
+      games_p1:g1, games_p2:g2, winner_id:winner===pl1?pid1:(winner===pl2?pid2:null), score_line:line, duration_sec:0,
       scan_link:scanUrl, source:'scan', raw_rally_history:''
     };
     var gameRows=[];
@@ -663,7 +669,7 @@ function commitResults_(payload) {
       var n=Math.max(p1.length,p2.length);
       for(var i=0;i<n;i++){ var a=p1[i],b=p2[i]; if(a==null&&b==null)continue;
         gameRows.push({ match_id:mid, game_no:i+1, points_p1:a, points_p2:b,
-          game_winner_id: (a>b)?(cid(pl1)||null):(b>a?(cid(pl2)||null):null),
+          game_winner_id: (a>b)?(pid1||null):(b>a?(pid2||null):null),
           committed_datetime:now, scan_link:scanUrl });
       }
 
@@ -697,7 +703,7 @@ function commitResults_(payload) {
 
   var tieResults_ = Object.keys(ties).filter(function(t){return t;}).map(function(t){ return computeTie_(comp, round, t); });
   var refresh = null;
-  try { refresh = refreshDrawWorkbook_(comp); } catch(e){ refresh = { ok:false, error:String(e&&e.message||e) }; }
+  // Workbook output is an explicit, confirmed round action.
   return { ok:true, comp:comp, round:round, committed:committed, skipped:skipped, removed:removed, ties:tieResults_,
     scanUrl:scanUrl, scanError:scan.error, refresh:refresh,
     links:{ draw: propOpt_('DRAW_ID') ? 'https://docs.google.com/spreadsheets/d/'+propOpt_('DRAW_ID')+'/edit' : '',
@@ -761,196 +767,7 @@ function computePlayerRoundCell_(pData, lineFixtureGrid, rp, tno, r){
   if(actual && _normName_(actual)!==_normName_(rp.player)) return {kind:'away'};
   return {kind:'none'};
 }
-function getStandings_(comp){
-  var rules=getRules_(comp), gtw=Math.floor((rules.bestOf||5)/2)+1;
 
-  // LIVE CUTOVER: fetch fixtures + match_log from Supabase instead of
-  // Sheets. Everything below the fetch/reshape block is UNCHANGED
-  // computation logic (team ladder, individual points, walkover/scratch
-  // handling, ranking, playerRounds) - preserved as-is since it's pure
-  // arithmetic that doesn't care where the data came from, as long as it's
-  // fed the same shapes it already expects.
-  var fxRes = sbGet_('fixtures', 'select=fixture_id,round,line,team1_id,team2_id,player1_id,player2_id,scheduled&comp_ref=eq.'+encodeURIComponent(comp));
-  if(!fxRes.ok) return {ok:false, error:'Fixtures fetch failed: '+fxRes.error};
-  var fxRows = fxRes.data;
-  if(!fxRows.length) return {ok:false, error:'no fixtures for '+comp};
-
-  // NOT filtered by match_log's own comp_ref - that column had confirmed
-  // gaps during the backfill (the 'scan-' prefix rows with blank Comp
-  // cells). Fetching broadly and relying on the fmap[id] check below
-  // (already correctly comp-scoped via Fixtures) is the same defensive
-  // pattern getCommittedRubbers/existingResults/appResultsFor already use -
-  // this brings getStandings in line with them instead of being the one
-  // function still trusting a column with known reliability issues.
-  var mlRes = sbGet_('match_log', 'select=fixture_id,player1_id,player2_id,games_p1,games_p2,score_line,sub1,sub2');
-  if(!mlRes.ok) return {ok:false, error:'MatchLog fetch failed: '+mlRes.error};
-  var mlRows = mlRes.data;
-
-  // Resolve every team_id/player_id referenced across BOTH fetches in one
-  // pass each - avoids N+1 lookups, and covers substitutes who appear in
-  // match_log but weren't the originally-rostered player on a fixture.
-  var teamIdSet={}, playerIdSet={};
-  fxRows.forEach(function(f){ if(f.team1_id)teamIdSet[f.team1_id]=1; if(f.team2_id)teamIdSet[f.team2_id]=1;
-    if(f.player1_id)playerIdSet[f.player1_id]=1; if(f.player2_id)playerIdSet[f.player2_id]=1; });
-  mlRows.forEach(function(m){ if(m.player1_id)playerIdSet[m.player1_id]=1; if(m.player2_id)playerIdSet[m.player2_id]=1; });
-
-  // IMPORTANT: teams.team_id (Postgres surrogate) is NOT the same thing as
-  // teams.team_no (the 1-7 team number everything else in the system keys
-  // on - bye lookups, printed reports). Fetching both explicitly and using
-  // team_no for t1no/t2no below - using team_id there would have silently
-  // corrupted every downstream comparison against real team numbers.
-  var teamInfo={}, playerNames={};
-  var tids=Object.keys(teamIdSet);
-  if(tids.length){
-    var tr=sbGet_('teams', 'select=team_id,team_no,team_name&team_id=in.('+tids.join(',')+')');
-    if(!tr.ok) return {ok:false, error:'teams lookup failed: '+tr.error};
-    tr.data.forEach(function(t){ teamInfo[t.team_id]={no:t.team_no, name:t.team_name}; });
-  }
-  var pids=Object.keys(playerIdSet);
-  if(pids.length){
-    var pr=sbGet_('players', 'select=player_id,name&player_id=in.('+pids.join(',')+')');
-    if(!pr.ok) return {ok:false, error:'players lookup failed: '+pr.error};
-    pr.data.forEach(function(p){ playerNames[p.player_id]=p.name; });
-  }
-  function tno(id){ return id && teamInfo[id] ? teamInfo[id].no : null; }
-  function tname(id){ return id && teamInfo[id] ? teamInfo[id].name : ''; }
-  function pname(id){ return id && playerNames[id] ? playerNames[id] : ''; }
-
-  var fmap={}, nameToNo={}, dateByRound={}, lineNames={};
-  fxRows.forEach(function(f){
-    var id=f.fixture_id; if(!id) return;
-    var _t1n=tno(f.team1_id), _t2n=tno(f.team2_id);
-    var t1name=tname(f.team1_id), t2name=tname(f.team2_id);
-    var p1name=pname(f.player1_id), p2name=pname(f.player2_id);
-    fmap[id]={ round:f.round, line:f.line, t1:t1name, t1no:_t1n, p1:p1name, t2:t2name, t2no:_t2n, p2:p2name };
-    nameToNo[t1name]=_t1n; nameToNo[t2name]=_t2n;
-    var _rnd=parseInt(f.round,10);
-    if(_rnd && f.scheduled && !dateByRound[_rnd]) dateByRound[_rnd]=f.scheduled;
-    if(_t1n && f.line){ lineNames[_t1n]=lineNames[_t1n]||{}; if(!lineNames[_t1n][f.line])lineNames[_t1n][f.line]=p1name; }
-    if(_t2n && f.line){ lineNames[_t2n]=lineNames[_t2n]||{}; if(!lineNames[_t2n][f.line])lineNames[_t2n][f.line]=p2name; }
-  });
-
-  var teams={}, players={}, ties={}, rubbers=[];
-  function T(n){ if(!teams[n])teams[n]={team:n,played:0,won:0,lost:0,drawn:0,gf:0,ga:0,points:0,byRound:{}}; return teams[n]; }
-  function P(n,t){ if(!players[n])players[n]={player:n,team:t,played:0,won:0,lost:0,points:0,lines:{}}; return players[n]; }
-  function indWinner(loserGames){ return 6-loserGames; }   // best-of-5: 3-0=6,3-1=5,3-2=4
-  function indLoser(loserGames){ return 1+loserGames; }     // 0-3=1,1-3=2,2-3=3
-
-  // MatchLog rows, reshaped into the same per-rubber values the original
-  // Sheets-reading loop produced. sub1/sub2 now come DIRECTLY from
-  // match_log's own boolean columns rather than being re-derived by
-  // comparing names against the fixture's rostered player - those columns
-  // are reliably set both by the live write path and the backfill, and
-  // this is more robust than name comparison (which is exactly the class
-  // of bug the migration spent real effort untangling elsewhere).
-  mlRows.forEach(function(row){
-    var id=String(row.fixture_id||''); var f=fmap[id]; if(!f) return;
-    var g1=Number(row.games_p1)||0, g2=Number(row.games_p2)||0;
-    var pl1=pname(row.player1_id), pl2=pname(row.player2_id);
-    var walk=(String(row.score_line||'').indexOf('walkover')>=0||String(row.score_line||'').indexOf('scratched')>=0);
-    var dblScratch = walk && g1===0 && g2===0;
-    var sub1 = !!row.sub1, sub2 = !!row.sub2;
-    var w1=g1>g2, w2=g2>g1;
-    var ip1, ip2;
-    if(dblScratch){ ip1=0; ip2=0; }
-    else if(walk){
-      ip1 = sub1?0:(w1?indWinner(g2):0);
-      ip2 = sub2?0:(w2?indWinner(g1):0);
-    } else {
-      ip1 = sub1?0:(w1?indWinner(g2):(w2?indLoser(g1):0));
-      ip2 = sub2?0:(w2?indWinner(g1):(w1?indLoser(g2):0));
-    }
-    var p1Absent = walk && g1===0;
-    var p2Absent = walk && g2===0;
-    if(pl1 && !p1Absent){ var a=P(pl1,f.t1); a.played++; if(w1)a.won++; else if(w2)a.lost++; a.points+=ip1; if(f.line!=null)a.lines[f.line]=1; }
-    if(pl2 && !p2Absent){ var b=P(pl2,f.t2); b.played++; if(w2)b.won++; else if(w1)b.lost++; b.points+=ip2; if(f.line!=null)b.lines[f.line]=1; }
-    rubbers.push({ fixtureId:id, round:parseInt(f.round,10), line:parseInt(f.line,10), t1no:f.t1no, t2no:f.t2no, ip1:ip1, ip2:ip2, p1Actual:pl1, p2Actual:pl2 });
-    var m=id.match(/-R(\d+)-L\d+-M(\d+)$/); var key=m?('R'+m[1]+'-M'+m[2]):id;
-    if(!ties[key])ties[key]={teamA:f.t1,teamB:f.t2,round:(m?m[1]:''),aGames:0,bGames:0,aLines:0,bLines:0,scr:0};
-    var t=ties[key];
-    if(dblScratch){ t.scr++; }
-    else { t.aGames+=g1; t.bGames+=g2; if(w1)t.aLines++; else if(w2)t.bLines++; }
-  });
-
-  var scratches=0, roundsSet={};
-  Object.keys(ties).forEach(function(k){ var t=ties[k];
-    var winner = t.aLines>t.bLines?t.teamA:(t.bLines>t.aLines?t.teamB:'');
-    var sa=t.aGames+(winner===t.teamA?2:0)+1.5*t.scr; if(sa===0)sa=1;
-    var sb=t.bGames+(winner===t.teamB?2:0)+1.5*t.scr; if(sb===0)sb=1;
-    var A=T(t.teamA), B=T(t.teamB);
-    A.played++; B.played++; A.gf+=t.aGames; A.ga+=t.bGames; B.gf+=t.bGames; B.ga+=t.aGames;
-    A.points+=sa; B.points+=sb;
-    if(t.round){ A.byRound[t.round]=(A.byRound[t.round]||0)+sa; B.byRound[t.round]=(B.byRound[t.round]||0)+sb; roundsSet[t.round]=1; }
-    if(winner===t.teamA){A.won++;B.lost++;} else if(winner===t.teamB){B.won++;A.lost++;} else {A.drawn++;B.drawn++;}
-    scratches+=t.scr;
-  });
-  var rounds=Object.keys(roundsSet).map(Number).sort(function(a,b){return a-b;});
-  function toArr(o){ return Object.keys(o).map(function(k){return o[k];}); }
-  var teamLadder=toArr(teams).sort(function(a,b){ return b.points-a.points || (b.gf-b.ga)-(a.gf-a.ga) || b.won-a.won; });
-  var indLadder=toArr(players).map(function(p){ p.line=Object.keys(p.lines).sort().map(function(l){return 'L'+l;}).join(','); return p; })
-    .sort(function(a,b){ return b.points-a.points || b.won-a.won; });
-  indLadder.forEach(function(p){ p.compRank = 1 + indLadder.filter(function(q){return q.points>p.points;}).length; });
-  indLadder.forEach(function(p){ var ls=Object.keys(p.lines).map(Number).sort(function(a,b){return a-b;}); p._pl=ls.length?ls[0]:null; });
-  indLadder.forEach(function(p){
-    if(p._pl==null){ p.lineRank=''; return; }
-    var grp=indLadder.filter(function(q){return q._pl===p._pl;});
-    p.lineRank = 1 + grp.filter(function(q){return q.points>p.points;}).length;
-  });
-  indLadder.forEach(function(p){ delete p._pl; });
-
-  // per-player, per-round individual points (for player-follow Results) -
-  // re-derived from the SAME mlRows already fetched above, not a second
-  // MatchLog read like the original (which re-read the sheet a second
-  // time for this - a real, if minor, efficiency gain from having the
-  // data already in memory).
-  var playerRounds={};
-  mlRows.forEach(function(row){
-    var fid3=String(row.fixture_id||''), f3=fmap[fid3]; if(!f3) return;
-    var rnd3=parseInt(f3.round,10); if(!rnd3) return;
-    var pl1_3=pname(row.player1_id), pl2_3=pname(row.player2_id);
-    var g1_3=Number(row.games_p1)||0, g2_3=Number(row.games_p2)||0;
-    var walk3=(String(row.score_line||'').indexOf('walkover')>=0||String(row.score_line||'').indexOf('scratched')>=0);
-    var dbl3=walk3&&g1_3===0&&g2_3===0;
-    var sub1_3=!!row.sub1, sub2_3=!!row.sub2;
-    var w1_3=g1_3>g2_3, w2_3=g2_3>g1_3;
-    var ip1_3,ip2_3;
-    if(dbl3){ip1_3=0;ip2_3=0;}
-    else if(walk3){ip1_3=sub1_3?0:(w1_3?indWinner(g2_3):0);ip2_3=sub2_3?0:(w2_3?indWinner(g1_3):0);}
-    else{ip1_3=sub1_3?0:(w1_3?indWinner(g2_3):(w2_3?indLoser(g1_3):0));ip2_3=sub2_3?0:(w2_3?indWinner(g1_3):(w1_3?indLoser(g2_3):0));}
-    var p1abs3=walk3&&g1_3===0, p2abs3=walk3&&g2_3===0;
-    function prec(nm,ip,tnoV,ln,isSub,isAbs){if(!nm)return;var k=_normName_(nm);
-      if(!playerRounds[k])playerRounds[k]={name:nm,rounds:{}};
-      if(!playerRounds[k].rounds[rnd3]) playerRounds[k].rounds[rnd3]=[];
-      playerRounds[k].rounds[rnd3].push({ip:ip,sub:isSub,absent:isAbs,tno:tnoV,line:parseInt(ln,10)||0});}
-    prec(pl1_3,ip1_3,f3.t1no,f3.line,sub1_3,p1abs3);
-    prec(pl2_3,ip2_3,f3.t2no,f3.line,sub2_3,p2abs3);
-  });
-
-  var lineFixtureGrid = {};
-  (rubbers||[]).forEach(function(rb){
-    function put(tnoV,name){ if(!tnoV||!rb.line)return; lineFixtureGrid[tnoV]=lineFixtureGrid[tnoV]||{};
-      lineFixtureGrid[tnoV][rb.round]=lineFixtureGrid[tnoV][rb.round]||{}; lineFixtureGrid[tnoV][rb.round][rb.line]=name; }
-    put(rb.t1no, rb.p1Actual); put(rb.t2no, rb.p2Actual);
-  });
-
-  // LIVE CUTOVER: current roster now comes straight from Supabase's roster
-  // table for this comp - no more MASTER-vs-Draw-workbook fallback needed,
-  // since Supabase already holds roster data for every comp (backfilled).
-  var currentRoster=[], rosterError='';
-  var rRes = sbGet_('roster', 'select=team_id,line,player_id,captain&comp_ref=eq.'+encodeURIComponent(comp));
-  if(!rRes.ok){ rosterError = rRes.error; }
-  else if(!rRes.data.length){ rosterError = 'no roster rows for '+comp; }
-  else {
-    currentRoster = rRes.data.filter(function(r){ return r.player_id; }).map(function(r){
-      return { teamNo: tno(r.team_id)||0, teamName: tname(r.team_id)||'', line: r.line||0, player: pname(r.player_id)||'' };
-    });
-  }
-
-  return { ok:true, comp:comp, bestOf:rules.bestOf||5, teams:teamLadder, individuals:indLadder, rounds:rounds,
-    rubbers:rubbers, nameToNo:nameToNo, dateByRound:dateByRound, lineNames:lineNames,
-    playerRounds:playerRounds, currentRoster:currentRoster, rosterError:rosterError, lineFixtureGrid:lineFixtureGrid,
-    scratches:scratches, notes:{ scratch:'a double-scratch (both absent) scores 1.5 to each team; both players Away', individual:'a substitute scores 0; a single walkover credits the present player with the win (6) and the absent player is Away' } };
-}
 
 /**************************************************************************
  * COMP REPORT — same team/player-round grid as the Retro Results sheet,
@@ -960,57 +777,7 @@ function getStandings_(comp){
  * intentionally does not open - a bye round here just shows as a genuine
  * blank cell (indistinguishable from "not yet played") rather than "BYE".
  **************************************************************************/
-function getCompReport_(comp){
-  var s = getStandings_(comp);
-  if(!s.ok) return s;
-  var rounds = (s.rounds||[]).slice();
-  var nn = s.nameToNo||{}, recByNo={};
-  s.teams.forEach(function(t){ var no=nn[t.team]; if(no) recByNo[no]=t; });
-  var pr = s.playerRounds||{};
-  var teamNos = Object.keys(nn).map(function(name){return nn[name];})
-    .filter(function(v,i,a){return v && a.indexOf(v)===i;}).sort(function(a,b){return a-b;});
 
-  var teamRows = teamNos.map(function(tno){
-    var rec = recByNo[tno];
-    var tname = rec ? rec.team : ('Team '+tno);
-    var tPlayed=0; rounds.forEach(function(r){ if(rec&&rec.byRound&&rec.byRound[r]!=null) tPlayed++; });
-    var byRound = rounds.map(function(r){ var v=rec&&rec.byRound?rec.byRound[r]:null; return (v!=null)?_round1_(v):''; });
-    return { teamNo:tno, team:tname, points: rec?_round1_(rec.points):'', avg:(rec&&tPlayed)?_round1_(rec.points/tPlayed):'', byRound:byRound };
-  });
-
-  var allPlayerTotals=[];
-  (s.currentRoster||[]).forEach(function(rp){
-    var pKey=_normName_(rp.player), pData=pr[pKey], total=0, played=0;
-    rounds.forEach(function(r){
-      var cell=computePlayerRoundCell_(pData, s.lineFixtureGrid, rp, rp.teamNo, r);
-      if(cell.kind==='sub'){played++;} else if(cell.kind==='value'){total+=cell.value;played++;}
-    });
-    if(played>0) allPlayerTotals.push(total);
-  });
-  function playerRank(total,played){ if(!played)return ''; return 1+allPlayerTotals.filter(function(x){return x>total;}).length; }
-
-  var lines=[];
-  for(var lineNo=1; lineNo<=5; lineNo++){
-    var rows=[];
-    teamNos.forEach(function(tno){
-      var rp=(s.currentRoster||[]).filter(function(r){return r.teamNo===tno && r.line===lineNo;})[0];
-      if(!rp) return;
-      var pKey=_normName_(rp.player), pData=pr[pKey];
-      var total=0, played=0, away=0;
-      var byRound = rounds.map(function(r){
-        var cell=computePlayerRoundCell_(pData, s.lineFixtureGrid, rp, tno, r);
-        if(cell.kind==='away'){away++; return 'Away';}
-        if(cell.kind==='sub'){played++; return 'sub';}
-        if(cell.kind==='value'){total+=cell.value; played++; return cell.value;}
-        return '';
-      });
-      rows.push({ player:rp.player, team:rp.teamName||('Team '+tno), teamNo:tno, total: played?total:'', avg: played?_round1_(total/played):'', rank: playerRank(total,played), away:away||'', byRound:byRound });
-    });
-    lines.push({ line:lineNo, rows:rows });
-  }
-
-  return { ok:true, comp:comp, rounds:rounds, teams:teamRows, lines:lines, rosterError:s.rosterError||'' };
-}
 
 /**************************************************************************
  * PHASE 5b — publish standings to master tabs (safe, non-destructive to
@@ -1025,27 +792,9 @@ function writeLadderTab_(ss, name, head, rows){
   try{ sh.autoResizeColumns(1, head.length); }catch(e){}
   return sh;
 }
-function getDrawUrl_(){ return { ok:true, url: propOpt_('DRAW_ID') ? 'https://docs.google.com/spreadsheets/d/'+propOpt_('DRAW_ID')+'/edit' : '' }; }
 
-function refreshDrawWorkbook_(comp){
-  var s = getStandings_(comp);
-  if(!s.ok) return s;
-  var draw = SpreadsheetApp.openById(prop_('DRAW_ID'));
 
-  // 1) Individual ladder -> draw workbook "Ladder" tab
-  var iHead = ['Rank','Player','Team','Line','Line Rank','P','W','L','Points'];
-  var iRows = s.individuals.map(function(p){
-    return [p.compRank, p.player, p.team, p.line, p.lineRank, p.played, p.won, p.lost, p.points];
-  });
-  writeLadderTab_(draw, 'Ladder', iHead, iRows);
 
-  // 2) Results tab -> new team-first layout (script-owned, rebuilt each refresh)
-  var resInfo = writeResultsSheet_(draw, s);
-  var retroInfo; try{ retroInfo = writeRetroResultsSheet_(draw, s); }catch(e){ retroInfo = {ok:false, error:String(e&&e.message||e)}; }
-
-  return { ok:true, comp:comp, indCount:iRows.length, resultsBlocks:resInfo.teams, resFound:resInfo.ok, resInfo:resInfo, retroInfo:retroInfo,
-    drawUrl:'https://docs.google.com/spreadsheets/d/'+prop_('DRAW_ID')+'/edit' };
-}
 
 /**************************************************************************
  * DRAW MAINTENANCE — Stage 1: structured Roster (migrate / view / edit)
@@ -1288,18 +1037,7 @@ function readDrawDates_(draw){
 
 // Runnable from the editor to rebuild the Results tab without a commit.
 // Pass the comp code, e.g. rebuildResults('WPM202607'). With no arg it uses REBUILD_COMP script property.
-function rebuildResults_(comp){
-  comp = comp || propOpt_('REBUILD_COMP');
-  if(!comp) throw new Error('Pass a comp code, e.g. rebuildResults("WPM202607"), or set a REBUILD_COMP script property.');
-  var s=getStandings_(comp); if(!s.ok) throw new Error(s.error||'no standings');
-  var draw=SpreadsheetApp.openById(prop_('DRAW_ID'));
-  var results = writeResultsSheet_(draw, s);
-  var retro; try{ retro = writeRetroResultsSheet_(draw, s); }catch(e){ retro = {ok:false, error:String(e&&e.message||e)}; }
-  var summary = 'rebuildResults('+comp+'): Results='+(results.ok?('ok, '+results.teams+' teams, '+results.playerRows+' player rows'):('SKIPPED — '+results.reason))+
-    ' | Retro='+(retro.ok?('ok, '+retro.teams+' teams, '+retro.players+' players'):('SKIPPED — '+(retro.reason||retro.error)));
-  Logger.log(summary);
-  return { ok: results.ok && retro.ok, results:results, retro:retro, summary:summary };
-}
+
 
 /**************************************************************************
  * RESULTS SHEET — team-first layout, fully script-owned.
@@ -1427,25 +1165,7 @@ function buildResultsArray_(draw, s){
 // legitimate BEFORE ever touching the sheet — so a bug in the computation (bad comp code, roster
 // fetch failure, etc.) can never result in an emptied/blanked Results tab. Worst case it refuses
 // and reports why, leaving whatever was there untouched.
-function writeResultsSheet_(draw, s){
-  var built = buildResultsArray_(draw, s);
-  if(built.teamCount===0 || built.rosterCount===0 || built.individualRowCount===0){
-    return { ok:false, skipped:true,
-      reason:'built result looks incomplete (teams:'+built.teamCount+', roster players:'+built.rosterCount+', player rows:'+built.individualRowCount+')'+
-        (s.rosterError?' — Roster problem: '+s.rosterError:'')+' — left the existing Results tab untouched.' };
-  }
-  var res = findSheet_(draw, 'Results');
-  if(!res) res = draw.insertSheet('Results'); else res.clear();
-  res.getRange(1,1,built.A.length,built.W).setValues(built.A);
-  try{ res.getRange(built.dateRowNum, 7, 1, (s.rounds||[]).length).setNumberFormat('d/m'); }catch(e){}
-  res.getRange(1,1,1,built.W).setFontWeight('bold').setFontSize(13);
-  res.getRange(2,1,1,built.W).setFontStyle('italic').setFontColor('#666');
-  built.boldRows.forEach(function(rw){ try{res.getRange(rw,1,1,built.W).setFontWeight('bold');}catch(e){} });
-  built.shadeRows.forEach(function(rw){ try{res.getRange(rw,1,1,built.W).setFontWeight('bold').setBackground('#eef3ff');}catch(e){} });
-  res.setFrozenRows(built.dateRowNum); res.setFrozenColumns(6);
-  try{ res.autoResizeColumns(1, built.W); }catch(e){}
-  return { ok:true, teams:built.teamCount, rounds:(s.rounds||[]).length, playerRows:built.individualRowCount, unrostered:built.unrosteredCount };
-}
+
 
 /**************************************************************************
  * RETRO RESULTS — legacy flat layout, run in parallel during transition.
@@ -1478,93 +1198,9 @@ function _retroRoundCols_(sh, headerRow, startCol){
   for(var i=0;i<vals.length;i++){ if(typeof vals[i]==='number' && vals[i]===n+1) n++; else break; }
   return n;
 }
-function buildRetroWrites_(draw, s){
-  var res = findSheet_(draw, 'Retro Results');
-  if(!res) return { ok:false, skipped:true, reason:'No "Retro Results" tab found in the draw workbook.' };
 
-  var ss = draw;
-  function namedRange(name){ try{ return ss.getRangeByName(name); }catch(e){ return null; } }
 
-  var lineRanges = [];
-  for(var L=1; L<=5; L++){ var nr = namedRange('Line'+L+'_Names'); if(!nr) return { ok:false, skipped:true, reason:'Named range "Line'+L+'_Names" not found — has the Retro Results template been set up for this comp?' }; lineRanges.push(nr); }
-  var teamRange = namedRange('Team_Names');
-  if(!teamRange) return { ok:false, skipped:true, reason:'Named range "Team_Names" not found — has the Retro Results template been set up?' };
 
-  var pr = s.playerRounds || {};
-  var byeByRound = readDrawByes_(draw);
-  var nn = s.nameToNo || {};
-  var teamNos = Object.keys(nn).map(function(n){return nn[n];}).filter(function(v,i,a){return v && a.indexOf(v)===i;}).sort(function(a,b){return a-b;});
-  var recByNo = {}; s.teams.forEach(function(t){ var no=nn[t.team]; if(no) recByNo[no]=t; });
-
-  if(!teamNos.length || !(s.currentRoster||[]).length){
-    return { ok:false, skipped:true,
-      reason:'incomplete (teams:'+teamNos.length+', roster players:'+(s.currentRoster||[]).length+')'+
-        (s.rosterError?' — Roster problem: '+s.rosterError:'')+' — left the existing Retro Results tab untouched.' };
-  }
-
-  var headerRow1 = lineRanges[0].getRow() - 1;               // "Player | Line | 1 | 2 | 3…" sits one row above Line1_Names
-  var nameCol = lineRanges[0].getColumn();                    // column A (wherever the template actually puts names)
-  var roundCols = _retroRoundCols_(res, headerRow1, nameCol+2); // round numbers start 2 cols after the name column
-  if(!roundCols) return { ok:false, skipped:true, reason:'Could not detect round columns from row '+headerRow1+' — expected sequential 1,2,3… starting after the Line column.' };
-
-  var writes = [];   // {row, values:[name, line, r1..rN]}
-  var playerRowCount = 0;
-  lineRanges.forEach(function(nr, idx){
-    var lineNo = idx+1, startRow = nr.getRow(), n = nr.getNumRows();
-    for(var i=0;i<n;i++){
-      var tno = teamNos[i];                                   // row order within the named range = team-number order
-      var row = startRow+i;
-      var vals = new Array(2+roundCols).fill('');
-      if(tno!=null){
-        var rp = (s.currentRoster||[]).filter(function(r){ return r.teamNo===tno && r.line===lineNo; })[0];
-        if(rp){
-          var key=_normName_(rp.player), pData=pr[key];
-          vals[0]=rp.player; vals[1]=lineNo;
-          for(var r=1;r<=roundCols;r++){
-            if(byeByRound[r]===_histTno_(pData, r, tno)){ vals[1+r]='B'; continue; }
-            var cell = computePlayerRoundCell_(pData, s.lineFixtureGrid, rp, tno, r);
-            if(cell.kind==='none') vals[1+r]='';
-            else if(cell.kind==='away') vals[1+r]='A';
-            else if(cell.kind==='sub') vals[1+r]='sub';
-            else vals[1+r]=cell.value;
-          }
-          playerRowCount++;
-        }
-      }
-      writes.push({row:row, col:nameCol, values:vals});
-    }
-  });
-
-  var teamStartRow = teamRange.getRow(), teamN = teamRange.getNumRows();
-  var teamHeaderRow = teamStartRow - 1;
-  var teamRoundCols = _retroRoundCols_(res, teamHeaderRow, nameCol+2);
-  for(var i2=0;i2<teamN;i2++){
-    var tno2 = teamNos[i2], row2 = teamStartRow+i2;
-    var vals2 = new Array(2+(teamRoundCols||roundCols)).fill('');
-    if(tno2!=null){
-      var rec = recByNo[tno2];
-      vals2[0]= rec ? rec.team : (_nameForNo_(nn,tno2)||('Team '+tno2)); vals2[1]=tno2;
-      var rc = teamRoundCols||roundCols;
-      for(var r2=1;r2<=rc;r2++){
-        if(byeByRound[r2]===tno2){ vals2[1+r2]='BYE'; continue; }
-        var v = rec && rec.byRound ? rec.byRound[r2] : null;
-        vals2[1+r2] = (v!=null) ? _round1_(v) : '';
-      }
-    }
-    writes.push({row:row2, col:nameCol, values:vals2});
-  }
-
-  return { ok:true, sheet:res, writes:writes, playerRowCount:playerRowCount, teamCount:teamNos.length };
-}
-
-function writeRetroResultsSheet_(draw, s){
-  var built = buildRetroWrites_(draw, s);
-  if(!built.ok) return built;
-  built.writes.forEach(function(w){
-    built.sheet.getRange(w.row, w.col, 1, w.values.length).setValues([w.values]);
-  });
-  return { ok:true, teams:built.teamCount, players:built.playerRowCount };
-}
 
 /**************************************************************************
  * FAULT-FINDING — run auditMaster() (and auditDraw()) from the editor.
@@ -1805,16 +1441,7 @@ function deleteRubbers_(selectionsJson){
       if(chk.ok && chk.data.length===0) sbUpdate_('fixtures', 'fixture_id=eq.'+encodeURIComponent(fid), {played:false});
     });
 
-    var comp=String(sels[0].fixtureId||sels[0]||'').split('-R')[0], refresh=null, refreshError=null;
-    try{
-      var s=getStandings_(comp);
-      if(s.ok){
-        var drawSS=SpreadsheetApp.openById(prop_('DRAW_ID'));
-        var r1=writeResultsSheet_(drawSS, s);
-        var r2; try{ r2=writeRetroResultsSheet_(drawSS, s); }catch(e2){ r2={ok:false, error:String(e2&&e2.message||e2)}; }
-        refresh=(r1.ok?'results rebuilt':'results skipped: '+r1.reason)+'; '+(r2.ok?'retro rebuilt':'retro skipped: '+(r2.reason||r2.error));
-      } else { refreshError = s.error; }
-    }catch(e){ refreshError = String(e&&e.message||e); }
+    var refresh='Output requires a new confirmed round export after corrections',refreshError=null;
     return {ok:true, deletedRows:deleted, fixtures:sels.length, refresh:refresh, refreshError:refreshError};
   }catch(e){return {ok:false,error:String(e&&e.message||e)};}
 }
@@ -2012,3 +1639,185 @@ function auditTeamLine_(comp, teamNo, line){
   return { ok:true, count:rows.length, rows:rows };
 }
 function auditKillarneyL1_(){ return auditTeamLine_('WPM202607', 1, 1); }
+
+// Identity-based scoring shared by the report and confirmed workbook exports.
+function buildCompetitionStandings_(data, rules){
+ var fx=data.fixtures, roster=data.roster, ps={}, ts={}, results={}, warnings=[];
+ data.players.forEach(function(p){ps[p.player_id]=p.name;});
+ data.teams.forEach(function(t){ts[t.team_id]=t;});
+ data.matches.forEach(function(m){results[m.fixture_id]=m;});
+ var teamNos=data.teams.map(function(t){return t.team_no;}).sort(function(a,b){return a-b;});
+ var nn={}, teams={}, individuals={}, playerRounds={}, rubbers=[], ties={}, rounds={}, scheduled={}, participation={};
+ data.teams.forEach(function(t){nn[t.team_name]=t.team_no;teams[t.team_no]={team:t.team_name,teamNo:t.team_no,played:0,won:0,lost:0,drawn:0,gf:0,ga:0,points:0,byRound:{}};});
+ fx.forEach(function(f){
+  var r=Number(f.round);rounds[r]=f.scheduled; participation[r]=participation[r]||{};
+  [1,2].forEach(function(side){var tid=f['team'+side+'_id'],pid=f['player'+side+'_id'];if(ts[tid])participation[r][ts[tid].team_no]=true;
+   if(pid){scheduled[pid]=scheduled[pid]||{};scheduled[pid][r]=scheduled[pid][r]||[];scheduled[pid][r].push({fixture:f,side:side});}});
+ });
+ var byes={};Object.keys(rounds).forEach(function(r){var missing=teamNos.filter(function(t){return !participation[r][t];});
+  // Infer a bye only when a complete round uses every other team.
+  if(teamNos.length%2===1&&missing.length===1)byes[r]=missing[0];
+ });
+ fx.forEach(function(f){var m=results[f.fixture_id];if(!m)return;var r=Number(f.round),g1=Number(m.games_p1)||0,g2=Number(m.games_p2)||0;
+  var walk=/walkover|scratched/i.test(m.score_line||''), dbl=walk&&g1===0&&g2===0;
+  var t1=ts[f.team1_id],t2=ts[f.team2_id];if(!t1||!t2){warnings.push('Missing team: '+f.fixture_id);return;}
+  var key=r+':'+f.team1_id+':'+f.team2_id,t=ties[key]||(ties[key]={r:r,a:t1.team_no,b:t2.team_no,ga:0,gb:0,wa:0,wb:0,scr:0,count:0,expected:fx.filter(function(x){return Number(x.round)===r&&x.team1_id===f.team1_id&&x.team2_id===f.team2_id;}).length});
+  t.count++;if(dbl)t.scr++;else{t.ga+=g1;t.gb+=g2;if(g1>g2)t.wa++;if(g2>g1)t.wb++;}
+  var rb={fixtureId:f.fixture_id,round:r,line:Number(f.line),t1no:t1.team_no,t2no:t2.team_no,p1Actual:ps[m.player1_id]||'',p2Actual:ps[m.player2_id]||'',ip1:0,ip2:0};
+  [1,2].forEach(function(side){var pid=f['player'+side+'_id'];if(!pid)return;
+   var actual=m['player'+side+'_id'],g=side===1?g1:g2,opp=side===1?g2:g1;
+   var eligible=actual===pid&&!m['sub'+side],absent=!eligible||(walk&&g===0);
+   var entries=scheduled[pid][r],cell={kind:'away'};
+   if(entries.length>1){cell={kind:'conflict'};warnings.push('Player '+pid+' has multiple scheduled matches in round '+r);}
+   else if(!absent)cell={kind:'value',value:g>opp?6-opp:1+g};
+   playerRounds[pid]=playerRounds[pid]||{name:ps[pid]||pid,rounds:{}};playerRounds[pid].rounds[r]=cell;
+   if(cell.kind==='value'){
+    rb['ip'+side]=cell.value;var ti=side===1?t1:t2;
+    var p=individuals[pid]||(individuals[pid]={playerId:pid,player:ps[pid]||pid,team:ti.team_name,played:0,won:0,lost:0,points:0,lines:{}});
+    p.played++;p.points+=cell.value;if(g>opp)p.won++;else p.lost++;p.lines[f.line]=1;
+   }
+  });rubbers.push(rb);
+ });
+ Object.keys(ties).forEach(function(k){var t=ties[k];if(t.count!==t.expected){warnings.push('Incomplete team tie in round '+t.r+' ('+t.count+'/'+t.expected+' results)');return;}
+  var pa=t.ga+(t.wa>t.wb?2:0)+1.5*t.scr,pb=t.gb+(t.wb>t.wa?2:0)+1.5*t.scr;pa=pa||1;pb=pb||1;
+  var a=teams[t.a],b=teams[t.b];a.byRound[t.r]=pa;b.byRound[t.r]=pb;a.points+=pa;b.points+=pb;a.played++;b.played++;a.gf+=t.ga;a.ga+=t.gb;b.gf+=t.gb;b.ga+=t.ga;
+  if(t.wa>t.wb){a.won++;b.lost++;}else if(t.wb>t.wa){b.won++;a.lost++;}else{a.drawn++;b.drawn++;}
+ });
+ var currentRoster=roster.filter(function(p){return p.player_id&&ts[p.team_id];}).map(function(p){var t=ts[p.team_id];return {playerId:p.player_id,player:ps[p.player_id]||p.player_id,teamNo:t.team_no,teamName:t.team_name,line:Number(p.line)};});
+ var inds=Object.keys(individuals).map(function(k){return individuals[k];}).sort(function(a,b){return b.points-a.points||b.won-a.won;});
+ inds.forEach(function(p){p.line=Object.keys(p.lines).map(function(l){return 'L'+l;}).join(',');p.compRank=1+inds.filter(function(x){return x.points>p.points;}).length;p.lineRank=1+inds.filter(function(x){return x.points>p.points&&Object.keys(x.lines)[0]===Object.keys(p.lines)[0];}).length;});
+ return {ok:true,comp:data.comp,teams:Object.keys(teams).map(function(k){return teams[k];}).sort(function(a,b){return b.points-a.points;}),individuals:inds,rounds:Object.keys(rounds).map(Number).sort(function(a,b){return a-b;}),dateByRound:rounds,byes:byes,scheduled:scheduled,playerRounds:playerRounds,currentRoster:currentRoster,nameToNo:nn,teamNos:teamNos,rubbers:rubbers,warnings:warnings,rosterError:'',scratches:0,notes:{individual:'Only the scheduled match earns individual points; substitutes contribute to their team only',scratch:'double scratches give each team 1.5 points'}};
+}
+function loadCompetitionData_(comp){
+ function get(t,q){return requireSb_(sbGet_(t,q)).data;}
+ return {comp:comp,fixtures:get('fixtures','select=*&comp_ref=eq.'+encodeURIComponent(comp)),matches:get('match_log','select=fixture_id,player1_id,player2_id,games_p1,games_p2,score_line,sub1,sub2,scan_link,match_id&comp_ref=eq.'+encodeURIComponent(comp)),teams:get('teams','select=*&comp_ref=eq.'+encodeURIComponent(comp)),roster:get('roster','select=*&comp_ref=eq.'+encodeURIComponent(comp)),players:get('players','select=player_id,name')};
+}
+function getStandings_(comp){return buildCompetitionStandings_(loadCompetitionData_(comp),getRules_(comp));}
+function scheduledPlayerCell_(s,rp,r){
+ var scheduled=s.scheduled[rp.playerId]&&s.scheduled[rp.playerId][r];
+ if(scheduled&&scheduled.length>1)return 'CHECK';
+ var cell=s.playerRounds[rp.playerId]&&s.playerRounds[rp.playerId].rounds[r];
+ if(cell)return cell.kind==='value'?cell.value:(cell.kind==='conflict'?'CHECK':'AWAY');
+ if(!scheduled&&s.byes[r]===rp.teamNo)return 'BYE';
+ return '';
+}
+function reportFromStandings_(s){
+ var totals=[];var lines=[];
+ for(var l=1;l<=5;l++){
+  var rows=s.currentRoster.filter(function(p){return p.line===l;}).sort(function(a,b){return a.teamNo-b.teamNo;}).map(function(p){
+   var cells=s.rounds.map(function(r){return scheduledPlayerCell_(s,p,r);}),nums=cells.filter(function(v){return typeof v==='number';}),total=nums.reduce(function(a,b){return a+b;},0);
+   var row={playerId:p.playerId,player:p.player,team:p.teamName,teamNo:p.teamNo,total:nums.length?total:'',avg:nums.length?_round1_(total/nums.length):'',away:cells.filter(function(v){return v==='AWAY';}).length||'',byRound:cells};if(nums.length)totals.push(total);return row;
+  });lines.push({line:l,rows:rows});
+ }
+ lines.forEach(function(l){l.rows.forEach(function(p){p.rank=p.total===''?'':1+totals.filter(function(v){return v>p.total;}).length;});});
+ return {ok:true,comp:s.comp,rounds:s.rounds,lines:lines,warnings:s.warnings,teams:s.teams.slice().sort(function(a,b){return a.teamNo-b.teamNo;}).map(function(t){return {teamNo:t.teamNo,team:t.team,points:t.points,avg:t.played?_round1_(t.points/t.played):'',byRound:s.rounds.map(function(r){return s.byes[r]===t.teamNo?'BYE':(t.byRound[r]==null?'':_round1_(t.byRound[r]));})};}),rosterError:s.rosterError};
+}
+function getCompReport_(comp){return reportFromStandings_(getStandings_(comp));}
+
+function outputWorkbookId_(value){
+ var v=String(value||'').trim();if(!v)return '';
+ var m=v.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);if(m)v=m[1];
+ if(!/^[A-Za-z0-9_-]{20,100}$/.test(v))throw new Error('Enter a Google Sheets workbook ID or URL.');return v;
+}
+function getOutputConfig_(comp){
+ var rows=requireSb_(sbGet_('comps','select=output_workbook_id&comp_ref=eq.'+encodeURIComponent(comp))).data;
+ if(!rows.length)throw new Error('Competition not found.');var id=rows[0].output_workbook_id||'';
+ return {ok:true,workbookId:id,url:id?'https://docs.google.com/spreadsheets/d/'+id+'/edit':'',message:id?'Output: Retro Results. Preview a completed, scan-linked round before sending.':'No output configured. Save the competition workbook ID below. It must contain the Retro Results template and be editable by the Apps Script owner.'};
+}
+function validateOutputWorkbook_(id){
+ var ss=SpreadsheetApp.openById(id),sh=findSheet_(ss,'Retro Results');if(!sh)throw new Error('Workbook needs a Retro Results sheet.');
+ ['Line1_Names','Line2_Names','Line3_Names','Line4_Names','Line5_Names','Team_Names'].forEach(function(n){var r=ss.getRangeByName(n);if(!r||r.getSheet().getSheetId()!==sh.getSheetId()||r.getNumColumns()!==1)throw new Error('Retro Results needs the named range '+n+'.');});
+ var first=ss.getRangeByName('Line1_Names'),col=first.getColumn(),count=_retroRoundCols_(sh,first.getRow()-1,col+2);
+ if(!count)throw new Error('Retro Results needs sequential numeric round headers after Player and Line.');
+ ['Line2_Names','Line3_Names','Line4_Names','Line5_Names','Team_Names'].forEach(function(n){if(ss.getRangeByName(n).getColumn()!==col)throw new Error('All output name ranges must share the same column.');});
+ var team=ss.getRangeByName('Team_Names');if(_retroRoundCols_(sh,team.getRow()-1,col+2)!==count)throw new Error('Player and team round headers must match.');
+ return ss;
+}
+function saveOutputConfig_(comp,value){
+ var id=outputWorkbookId_(value);if(id)validateOutputWorkbook_(id);
+ requireSb_(sbUpdate_('comps','comp_ref=eq.'+encodeURIComponent(comp),{output_workbook_id:id||null}));return getOutputConfig_(comp);
+}
+function getDrawUrl_(comp){return getOutputConfig_(comp);}
+function outputRoundPlan_(comp,round){
+ round=Number(round);if(!Number.isInteger(round)||round<1)throw new Error('Choose a round.');
+ var cfg=getOutputConfig_(comp);if(!cfg.workbookId)throw new Error(cfg.message);
+ var ss=validateOutputWorkbook_(cfg.workbookId),sh=findSheet_(ss,'Retro Results'),data=loadCompetitionData_(comp),s=buildCompetitionStandings_(data,getRules_(comp));
+ var fixtures=data.fixtures.filter(function(f){return Number(f.round)===round;}),byFixture={};data.matches.forEach(function(m){byFixture[m.fixture_id]=m;});
+ if(!fixtures.length)throw new Error('No fixtures for this round.');
+ var missing=fixtures.filter(function(f){return !byFixture[f.fixture_id];}).map(function(f){return f.fixture_id;});
+ var scans=fixtures.filter(function(f){var m=byFixture[f.fixture_id];return m&&!m.scan_link;}).map(function(f){return f.fixture_id;});
+ if(missing.length||scans.length)throw new Error('Round is not ready. Missing results: '+(missing.join(', ')||'none')+'. Missing scanned sheets: '+(scans.join(', ')||'none')+'. Commit/reconcile these scans before sending.');
+ var first=ss.getRangeByName('Line1_Names'),start=first.getColumn()+2,header=first.getRow()-1,cols=_retroRoundCols_(sh,header,start);
+ if(round>cols)throw new Error('Retro Results has no column for round '+round+'. Extend the sequential round headers before TOTAL, keeping the formulas.');
+ var report=reportFromStandings_(s),ri=report.rounds.indexOf(round),writes=[],changes=[];
+ function block(n,rows,isTeam){
+  var range=ss.getRangeByName(n),names=range.getValues(),oldRound=sh.getRange(range.getRow(),start+round-1,range.getNumRows(),1),old=oldRound.getValues(),formulas=oldRound.getFormulas(),used={};
+  if(rows.length>range.getNumRows())throw new Error(n+' has fewer rows than the competition. Extend the named range first.');
+  for(var i=0;i<names.length;i++){
+   var label=String(names[i][0]||'').trim(),row=label?rows.filter(function(p){return _normName_(isTeam?p.team:p.player)===_normName_(label);}):[];
+   if(label&&row.length!==1)throw new Error('Cannot safely map '+n+' row '+(range.getRow()+i)+' ('+label+'). Update its name to one unique current '+(isTeam?'team':'player')+'.');
+   var p=row[0]||(!label?rows[i]:null);if(!p)continue;
+   var identity=isTeam?p.teamNo:p.playerId;if(used[identity])throw new Error('Duplicate output row: '+label);used[identity]=true;
+   var value=p.byRound[ri];if(value==='CHECK'||value==='')throw new Error('Unresolved round '+round+' value for '+(p.player||p.team)+'. Check fixtures and roster before output.');
+   if(formulas[i][0])throw new Error('A round cell contains a formula; no output was written.');
+   if(!label)writes.push({row:range.getRow()+i,col:range.getColumn(),value:isTeam?p.team:p.player});
+   if(old[i][0]!==value){changes.push({cell:oldRound.getCell(i+1,1).getA1Notation(),name:p.player||p.team,before:old[i][0],after:value});writes.push({row:range.getRow()+i,col:start+round-1,value:value});}
+  }
+ }
+ report.lines.forEach(function(l){block('Line'+l.line+'_Names',l.rows,false);});block('Team_Names',report.teams,true);
+ return {workbookId:cfg.workbookId,sheetId:sh.getSheetId(),comp:comp,round:round,writes:writes,changes:changes,fixtures:fixtures.length,url:cfg.url};
+}
+function outputFingerprint_(plan){return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(plan)));}
+function previewRoundOutput_(comp,round){
+ var p=outputRoundPlan_(comp,round),token=Utilities.getUuid();CacheService.getScriptCache().put('output:'+token,outputFingerprint_(p),600);
+ return {ok:true,token:token,comp:comp,round:p.round,url:p.url,fixtures:p.fixtures,changes:p.changes};
+}
+function sendRoundOutput_(comp,round,token){
+ var lock=LockService.getScriptLock();lock.waitLock(30000);
+ try{var p=outputRoundPlan_(comp,round),cache=CacheService.getScriptCache(),expected=cache.get('output:'+token);
+  if(!expected||expected!==outputFingerprint_(p))throw new Error('Preview expired or results/output changed. Preview again before sending.');
+  if(!p.writes.length)return {ok:true,unchanged:true,url:p.url};
+  var backup=DriveApp.getFileById(p.workbookId).makeCopy('Results backup '+comp+' R'+p.round+' '+new Date().toISOString());
+  if(outputFingerprint_(outputRoundPlan_(comp,round))!==expected)throw new Error('Results changed while preparing the backup. Preview again before sending.');
+  var requests=p.writes.map(function(w){return {updateCells:{range:{sheetId:p.sheetId,startRowIndex:w.row-1,endRowIndex:w.row,startColumnIndex:w.col-1,endColumnIndex:w.col},rows:[{values:[{userEnteredValue:typeof w.value==='number'?{numberValue:w.value}:{stringValue:w.value}}]}],fields:'userEnteredValue'}};});
+  applyOutputCells_(SpreadsheetApp.openById(p.workbookId).getSheets().filter(function(sh){return sh.getSheetId()===p.sheetId;})[0],requests);
+  cache.remove('output:'+token);return {ok:true,changed:p.changes.length,url:p.url,backupUrl:backup.getUrl()};
+ }finally{lock.releaseLock();}
+}
+// Explicit maintenance command for the user-requested historical audit.
+// Does not run on result commits or during normal round distribution.
+function repairWednesdayOutput(){assertAdmin_();return repairHistoricalOutput_('WPM202607');}
+function repairHistoricalOutput_(comp){
+ var cfg=getOutputConfig_(comp);if(!cfg.workbookId)throw new Error(cfg.message);
+ var ss=validateOutputWorkbook_(cfg.workbookId),sh=findSheet_(ss,'Retro Results'),s=getStandings_(comp),report=reportFromStandings_(s);
+ if(s.warnings.length)throw new Error(s.warnings.join('; '));
+ var first=ss.getRangeByName('Line1_Names'),start=first.getColumn()+2,cols=_retroRoundCols_(sh,first.getRow()-1,start),requests=[],changes=[];
+ function add(row,col,value){requests.push({updateCells:{range:{sheetId:sh.getSheetId(),startRowIndex:row-1,endRowIndex:row,startColumnIndex:col-1,endColumnIndex:col},rows:[{values:[{userEnteredValue:typeof value==='number'?{numberValue:value}:{stringValue:String(value)}}]}],fields:'userEnteredValue'}});}
+ function block(name,rows,team){var nr=ss.getRangeByName(name),names=nr.getValues(),cells=sh.getRange(nr.getRow(),start,nr.getNumRows(),cols),values=cells.getValues(),formulas=cells.getFormulas();
+  names.forEach(function(n,i){var hits=rows.filter(function(p){return _normName_(team?p.team:p.player)===_normName_(n[0]);});if(hits.length!==1)throw new Error('Unsafe row mapping '+name+' '+n[0]);
+   for(var j=0;j<cols;j++){if(formulas[i][j])throw new Error('Round formula at '+cells.getCell(i+1,j+1).getA1Notation());var index=report.rounds.indexOf(j+1);if(index<0)continue;var value=hits[0].byRound[index];if(value==='CHECK')throw new Error('Ambiguous scheduled match');if(values[i][j]!==value){changes.push({cell:cells.getCell(i+1,j+1).getA1Notation(),before:values[i][j],after:value});add(nr.getRow()+i,start+j,value);}}
+  });
+ }
+ report.lines.forEach(function(l){block('Line'+l.line+'_Names',l.rows,false);});block('Team_Names',report.teams,true);
+ if(!changes.length){Logger.log('Retro Results already matches the audited calculation.');return {ok:true,changed:0};}
+ var backup=DriveApp.getFileById(cfg.workbookId).makeCopy('Before historical results repair '+comp+' '+new Date().toISOString());
+ add(2,1,'AWAY = absent from scheduled match. BYE = no scheduled match. Sub appearances count for the team only.');
+ applyOutputCells_(sh,requests);
+ var rules=sh.getConditionalFormatRules(),ranges=[sh.getRange(first.getRow(),start,35,cols),sh.getRange(ss.getRangeByName('Team_Names').getRow(),start,7,cols)];
+ ['AWAY','BYE'].forEach(function(v){rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(v).setBackground(v==='AWAY'?'#fff2cc':'#ccffff').setRanges(ranges).build());});sh.setConditionalFormatRules(rules);sh.setColumnWidths(start,cols,58);
+ SpreadsheetApp.flush();Logger.log(JSON.stringify({ok:true,changed:changes.length,backupUrl:backup.getUrl(),changes:changes}));return {ok:true,changed:changes.length,backupUrl:backup.getUrl()};
+}
+
+
+// One native range write preserves existing formulas and all formatting.
+// This works without enabling the separate Advanced Sheets API.
+function applyOutputCells_(sheet,requests){
+ var cells=requests.map(function(r){var u=r.updateCells;return {row:u.range.startRowIndex+1,col:u.range.startColumnIndex+1,value:u.rows[0].values[0].userEnteredValue};});
+ if(!cells.length)return;
+ var top=Math.min.apply(null,cells.map(function(c){return c.row;})),bottom=Math.max.apply(null,cells.map(function(c){return c.row;})),left=Math.min.apply(null,cells.map(function(c){return c.col;})),right=Math.max.apply(null,cells.map(function(c){return c.col;}));
+ var range=sheet.getRange(top,left,bottom-top+1,right-left+1),values=range.getValues(),formulas=range.getFormulas();
+ values.forEach(function(row,i){row.forEach(function(v,j){if(formulas[i][j])values[i][j]=formulas[i][j];else if(typeof v==='string'&&v.charAt(0)==='=')values[i][j]="'"+v;});});
+ cells.forEach(function(c){var v=c.value;values[c.row-top][c.col-left]=v.numberValue!=null?v.numberValue:(String(v.stringValue||'').charAt(0)==='='?"'"+v.stringValue:v.stringValue||'');});
+ range.setValues(values);SpreadsheetApp.flush();
+ var actual=range.getValues();cells.forEach(function(c){var want=c.value.numberValue!=null?c.value.numberValue:c.value.stringValue||'';if(actual[c.row-top][c.col-left]!==want)throw new Error('Output read-back mismatch. Inspect the workbook backup before retrying.');});
+}
