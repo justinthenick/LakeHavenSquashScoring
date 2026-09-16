@@ -403,7 +403,7 @@ function renderRoster(res){
   if(!res||!res.ok){$('drawwrap').innerHTML='<div class="banner warn">'+esc((res&&res.error)||'no roster')+'</div>';return;}
   ROSTER=res.rows.map(function(r,i){r._id='r'+i;return r;});
   ROSTERTEAMS=res.teams||[];
-  ROSTERORIG={}; ROSTER.forEach(function(r){ ROSTERORIG[r._id]={teamNo:r.teamNo,line:r.line,player:r.player,grade:r.grade,email:r.email,phone:r.phone,captain:!!r.captain}; });
+  ROSTERORIG={}; ROSTER.forEach(function(r){ ROSTERORIG[r._id]={teamNo:r.teamNo,line:r.line,player:r.player,playerId:r.playerId,grade:r.grade,email:r.email,phone:r.phone,captain:!!r.captain}; });
   FILT={teams:[],lines:[]};
   var note=res.source==='legacy'
     ? '<div class="banner info">Reading the legacy <b>Teams</b> layout. <b>Save</b> migrates it to a clean <b>Roster</b> tab and refreshes players on future (unplayed) fixtures.</div>'
@@ -432,7 +432,7 @@ function wireFilters(){
   $('fClear').onclick=function(){Array.prototype.forEach.call(document.querySelectorAll('.fTeam,.fLine'),function(c){c.checked=false;});upd();};
 }
 function rowChanged(r){ var o=ROSTERORIG[r._id]; if(!o)return true;
-  return o.teamNo!==r.teamNo||o.line!==r.line||(o.player||'')!==(r.player||'')||(o.grade||'')!==(r.grade||'')||(o.email||'')!==(r.email||'')||(o.phone||'')!==(r.phone||'')||!!o.captain!==!!r.captain; }
+  return o.teamNo!==r.teamNo||o.line!==r.line||(o.player||'')!==(r.player||'')||(o.playerId||'')!==(r.playerId||'')||(o.grade||'')!==(r.grade||'')||(o.email||'')!==(r.email||'')||(o.phone||'')!==(r.phone||'')||!!o.captain!==!!r.captain; }
 function teamOpts(sel){return ROSTERTEAMS.map(function(t){return '<option value="'+t.no+'"'+(t.no===sel?' selected':'')+'>'+esc(t.name)+'</option>';}).join('')+'<option value="Sub"'+(String(sel)==='Sub'?' selected':'')+'>Sub (pool)</option>';}
 function lineOpts(sel){var o='';for(var i=1;i<=5;i++)o+='<option value="'+i+'"'+(String(sel)===String(i)?' selected':'')+'>'+i+'</option>';return o;}
 function _teamVal(v){return (v==='Sub')?'Sub':(parseInt(v,10)||0);}
@@ -445,7 +445,7 @@ function drawRosterBody(){
     return '<tr data-id="'+r._id+'" class="'+(rowChanged(r)?'rchanged':'')+'">'+
       '<td><select class="rTeam">'+teamOpts(r.teamNo)+'</select></td>'+
       '<td><select class="rLine">'+lineOpts(r.line)+'</select></td>'+
-      '<td><input class="rPlayer" value="'+esc(r.player)+'" style="min-width:150px" autocomplete="off"></td>'+
+      '<td><input class="rPlayer" value="'+esc(r.player)+'" style="min-width:150px" autocomplete="off"><small>'+esc(r.playerId||'Select a contact')+'</small></td>'+
       '<td><select class="rGrade">'+gradeOpts(r.grade)+'</select></td>'+
       '<td><input class="rEmail" value="'+esc(r.email||'')+'" style="min-width:170px"></td>'+
       '<td><input class="rPhone" value="'+esc(r.phone)+'" style="width:120px"></td>'+
@@ -456,7 +456,7 @@ function drawRosterBody(){
   Array.prototype.forEach.call($('rosterBody').querySelectorAll('tr[data-id]'),function(tr){
     var id=tr.getAttribute('data-id'), r=byId[id];
     function sync(){ if(!r)return; r.teamNo=_teamVal(tr.querySelector('.rTeam').value); r.line=parseInt(tr.querySelector('.rLine').value,10)||0;
-      r.player=tr.querySelector('.rPlayer').value; r.grade=tr.querySelector('.rGrade').value; r.email=tr.querySelector('.rEmail').value; r.phone=tr.querySelector('.rPhone').value; r.captain=tr.querySelector('.rCapt').checked;
+      setRosterPlayerName(r,tr.querySelector('.rPlayer').value); r.grade=tr.querySelector('.rGrade').value; r.email=tr.querySelector('.rEmail').value; r.phone=tr.querySelector('.rPhone').value; r.captain=tr.querySelector('.rCapt').checked;
       tr.className=rowChanged(r)?'rchanged':''; }
     tr.querySelector('.rTeam').onchange=sync; tr.querySelector('.rLine').onchange=sync; tr.querySelector('.rGrade').onchange=sync;
     tr.querySelector('.rPlayer').oninput=function(){ sync(); renderRosterSuggest(tr,r); };
@@ -466,6 +466,13 @@ function drawRosterBody(){
   });
 }
 function gradeOpts(sel){var bands=['','1','1-2','2-3','3-4','4-5','5'];return bands.map(function(b){return '<option value="'+b+'"'+(String(sel||'')===b?' selected':'')+'>'+(b||'—')+'</option>';}).join('');}
+function setRosterPlayerName(r,name){
+ if(String(r.player||'').trim()!==String(name||'').trim())r.playerId='';
+ r.player=name;
+}
+function selectRosterContact(r,c){
+ r.player=c.name;r.playerId=c.id;r.email=c.email||'';r.phone=c.phone||'';r.grade=c.grade||'';
+}
 function renderRosterSuggest(tr,r){
   var input=tr.querySelector('.rPlayer'); if(!input) return;
   var host=$('rFloatSuggest');
@@ -473,7 +480,7 @@ function renderRosterSuggest(tr,r){
   if(!ql){ host.style.display='none'; host.innerHTML=''; return; }
   var matches=ALLCONTACTS.filter(function(c){return c.name && c.name.toLowerCase().indexOf(ql)>-1;}).slice(0,6);
   var exact=ALLCONTACTS.some(function(c){return c.name && c.name.toLowerCase()===ql;});
-  var html=matches.map(function(c){return '<button type="button" class="rSugItem" data-id="'+esc(c.id)+'">'+esc(c.name)+'</button>';}).join('');
+  var html=matches.map(function(c){return '<button type="button" class="rSugItem" data-id="'+esc(c.id)+'">'+esc(c.name)+' ['+esc(c.id)+']</button>';}).join('');
   if(raw && !exact) html+='<button type="button" class="rSugItem add" data-newname="1">+ Add \u201c'+esc(raw)+'\u201d as new player</button>';
   if(!html){ host.style.display='none'; host.innerHTML=''; return; }
   host.innerHTML=html;
@@ -486,7 +493,7 @@ function renderRosterSuggest(tr,r){
     b.onclick=function(){
       if(b.dataset.newname){ host.style.display='none'; host.innerHTML=''; return; }
       var c=ALLCONTACTS.filter(function(x){return String(x.id)===b.dataset.id;})[0];
-      if(c){ r.player=c.name; if(c.email)r.email=c.email; if(c.phone)r.phone=c.phone; if(c.grade)r.grade=c.grade; }
+      if(c)selectRosterContact(r,c);
       host.style.display='none'; host.innerHTML='';
       drawRosterBody();
     };
@@ -498,7 +505,7 @@ function collectRoster(){
     var r=byId[tr.getAttribute('data-id')];if(!r)return;
     r.teamNo=_teamVal(tr.querySelector('.rTeam').value);
     r.line=parseInt(tr.querySelector('.rLine').value,10)||0;
-    r.player=tr.querySelector('.rPlayer').value;
+    setRosterPlayerName(r,tr.querySelector('.rPlayer').value);
     r.grade=tr.querySelector('.rGrade').value;
     r.email=tr.querySelector('.rEmail').value;
     r.phone=tr.querySelector('.rPhone').value;
@@ -509,13 +516,13 @@ function saveRosterAction(){
   collectRoster();
   var rows=ROSTER.map(function(r){
     var tn=(ROSTERTEAMS.filter(function(t){return t.no===r.teamNo;})[0]||{}).name||r.teamName||'';
-    return {teamNo:r.teamNo,teamName:tn,line:r.line,player:(r.player||'').trim(),grade:(r.grade||'').trim(),email:(r.email||'').trim(),phone:(r.phone||'').trim(),captain:!!r.captain};
+    return {teamNo:r.teamNo,teamName:tn,line:r.line,player:(r.player||'').trim(),playerId:r.playerId||'',grade:(r.grade||'').trim(),email:(r.email||'').trim(),phone:(r.phone||'').trim(),captain:!!r.captain};
   }).filter(function(r){return r.player;});
   var b=$('saveRoster');b.disabled=true;b.textContent='Saving…';
   google.script.run.withSuccessHandler(function(r){
     b.disabled=false;b.textContent='Save roster & update fixtures';
     if(r&&r.ok){rosterFlash='<div class="banner ok" style="margin-top:10px">Saved '+r.count+' players'+(r.fixturesUpdated!=null?'; refreshed '+r.fixturesUpdated+' future fixture(s)':'')+(r.fixturesFrozen?' ('+r.fixturesFrozen+' played fixture(s) left untouched)':'')+(r.contactsAdded?'; added '+r.contactsAdded+' new contact(s) with a PlayerID':'')+'.</div>';loadContacts();renderDrawTab();}
-    else $('rosterStatus').innerHTML='<div class="banner warn" style="margin-top:10px">Save failed'+(r&&r.error?': '+esc(r.error):'')+'</div>';
+    else {console.warn('Roster save failed',{comp:$('comp').value,error:r&&r.error,conflicts:r&&r.conflicts});$('rosterStatus').innerHTML='<div class="banner warn" style="margin-top:10px;white-space:pre-wrap">Save failed'+(r&&r.error?': '+esc(r.error):'')+'</div>';}
   }).withFailureHandler(function(e){b.disabled=false;b.textContent='Save roster & update fixtures';$('rosterStatus').innerHTML='<div class="banner warn" style="margin-top:10px">'+esc(e.message)+'</div>';})
    .saveRoster($('comp').value, JSON.stringify(rows));
 }

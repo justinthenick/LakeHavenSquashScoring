@@ -1106,7 +1106,8 @@ function getRoster_(comp){
     rRes.data.forEach(function(r){ if(r.player_id)playerIds[r.player_id]=1; });
     var contacts={}; var pids=Object.keys(playerIds);
     if(pids.length){ var pr=sbGet_('players','select=player_id,name,email,phone,grade&player_id=in.('+pids.join(',')+')');
-      if(pr.ok) pr.data.forEach(function(p){contacts[p.player_id]={name:p.name,email:p.email,phone:p.phone,grade:p.grade};}); }
+      if(!pr.ok)return {ok:false,error:'Roster contact lookup failed: '+pr.error};
+      pr.data.forEach(function(p){contacts[p.player_id]={name:p.name,email:p.email,phone:p.phone,grade:p.grade};}); }
 
     var rows = rRes.data.map(function(r){
       var t = teamInfo[r.team_id]||{}, c = contacts[r.player_id]||{};
@@ -1120,10 +1121,35 @@ function getRoster_(comp){
 // Sync roster players to the Contacts master: add anyone missing (with a new PlayerID),
 // and push email/phone edits. Contacts stays the source of truth.
 function syncContacts_(rows){
- var added=0,updated=0,nameToId={};
+ var added=0,updated=0,nameToId={},byId={},byName={},conflicts=[];
+ var lookup=sbGet_('players','select=player_id,name');
+ if(!lookup.ok)return {error:lookup.error};
+ lookup.data.forEach(function(p){byId[p.player_id]=p;var key=_normName_(p.name);(byName[key]||(byName[key]=[])).push(p);});
+ // Resolve the whole request before making contact changes. Existing IDs
+ // remain authoritative when two contacts happen to have the same name.
+ rows.forEach(function(row,i){
+  var nm=String(row.player||'').trim();if(!nm)return;
+  var key=_normName_(nm),id=String(row.playerId||'').trim(),matches=byName[key]||[];
+  var where='Row '+(i+1)+' (team '+row.teamNo+', line '+row.line+'), '+nm;
+  if(id){
+   if(!byId[id])conflicts.push(where+': player ID '+id+' no longer exists. Reload the roster.');
+   else if(_normName_(byId[id].name)!==key)conflicts.push(where+': player ID '+id+' belongs to '+byId[id].name+'. Select the intended contact again.');
+  }else if(matches.length>1){
+   conflicts.push(where+': multiple contacts match: '+matches.map(function(p){return p.name+' ['+p.player_id+']';}).join(', ')+'. Select a contact from the suggestions.');
+  }else if(matches.length===1)row.playerId=matches[0].player_id;
+ });
+ if(conflicts.length)return {added:0,updated:0,nameToId:{},conflicts:conflicts,error:conflicts.join('\n')};
  for(var i=0;i<rows.length;i++){var row=rows[i],nm=String(row.player||'').trim();if(!nm)continue;
-  var r=sbRpc_('cc_resolve_player',{p_name:nm,p_email:row.email==null?null:String(row.email),p_phone:row.phone==null?null:String(row.phone),p_grade:row.grade==null?null:String(row.grade)});
-  if(!r.ok)return {added:added,updated:updated,nameToId:nameToId,error:r.error};
+  var r;
+  if(row.playerId){
+   var patch={};['email','phone','grade'].forEach(function(k){if(row[k]!=null)patch[k]=String(row[k]);});
+   r=Object.keys(patch).length?sbUpdate_('players','player_id=eq.'+encodeURIComponent(row.playerId),patch):{ok:true};
+   r.playerId=row.playerId;
+  }else{
+   r=sbRpc_('cc_resolve_player',{p_name:nm,p_email:row.email==null?null:String(row.email),p_phone:row.phone==null?null:String(row.phone),p_grade:row.grade==null?null:String(row.grade)});
+  }
+  if(!r.ok)return {added:added,updated:updated,nameToId:nameToId,error:'Row '+(i+1)+' (team '+row.teamNo+', line '+row.line+'), '+nm+': '+r.error};
+  row.playerId=r.playerId;
   nameToId[_normName_(nm)]=r.playerId;if(r.added)added++;else updated++;
  }
  return {added:added,updated:updated,nameToId:nameToId};
@@ -1131,12 +1157,18 @@ function syncContacts_(rows){
 function saveRoster_(comp, rowsJson){
   try{
     var rows=(typeof rowsJson==='string')?JSON.parse(rowsJson):rowsJson;
+    if(!Array.isArray(rows))return {ok:false,error:'Invalid roster rows'};
+    var slots={};
+    for(var i=0;i<rows.length;i++){
+      var row=rows[i];if(!String(row.player||'').trim()||String(row.teamNo)==='Sub')continue;
+      var slot=row.teamNo+':'+row.line;
+      if(slots[slot])return {ok:false,error:'Team '+row.teamNo+', line '+row.line+' has two players: '+slots[slot]+' and '+row.player+'. Move both players to their intended lines before saving.'};
+      slots[slot]=row.player;
+    }
     var names={}; rows.forEach(function(r){ if(r.teamNo && r.teamName && !names[r.teamNo]) names[r.teamNo]=r.teamName; });
 
     var sync = syncContacts_(rows);
-    if(sync.error) return {ok:false, error:'contact sync failed: '+sync.error};
-    var nameToId = sync.nameToId;
-    function cid(name){ var nm=String(name||'').trim(); return nm ? (nameToId[_normName_(nm)]||'') : ''; }
+    if(sync.error) return {ok:false, error:'contact sync failed: '+sync.error, conflicts:sync.conflicts||[]};
 
     // Ensure every team this roster references exists in `teams` - a live
     // roster save can introduce a team that's never appeared in Fixtures
@@ -1155,7 +1187,7 @@ function saveRoster_(comp, rowsJson){
     var out_ = rows.filter(function(r){ return r.player && String(r.player).trim(); })
       .map(function(r){
         var teamId = teamIdByNo[r.teamNo];
-        return teamId ? { comp_ref:comp, team_id:teamId, line:r.line||0, player_id:cid(r.player)||null, captain:!!r.captain } : null;
+        return teamId ? { comp_ref:comp, team_id:teamId, line:r.line||0, player_id:r.playerId, captain:!!r.captain } : null;
       }).filter(function(r){ return r; });
 
     // Replace only THIS comp's roster rows - delete-then-insert scoped by
@@ -1170,6 +1202,7 @@ function saveRoster_(comp, rowsJson){
     }
 
     var fx = applyRosterToFutureFixtures_(comp, rows);
+    if(fx.error)return {ok:false,error:'Roster saved, but fixture refresh failed: '+fx.error+'. Retry saving to refresh fixtures.'};
     return {ok:true, count:out_.length, fixturesUpdated:fx.updated, fixturesFrozen:fx.frozen, contactsAdded:sync.added, contactsUpdated:sync.updated};
   }catch(e){ return {ok:false, error:String(e&&e.message||e)}; }
 }
@@ -1185,7 +1218,7 @@ function saveRoster_(comp, rowsJson){
 // known Contact can no longer be stored as free text; it resolves to
 // null instead of silently keeping an unresolvable name.
 function applyRosterToFutureFixtures_(comp, rows){
-  var rmap={}; rows.forEach(function(r){ var t=r.teamNo, l=r.line; if(t&&l&&r.player){ rmap[t]=rmap[t]||{}; rmap[t][l]=String(r.player).trim(); } });
+  var rmap={}; rows.forEach(function(r){ var t=r.teamNo, l=r.line; if(t&&l&&r.player){ rmap[t]=rmap[t]||{}; rmap[t][l]=r; } });
 
   var teamsRes = sbGet_('teams', 'select=team_id,team_no&comp_ref=eq.'+encodeURIComponent(comp));
   if(!teamsRes.ok) return {updated:0, frozen:0, error:teamsRes.error};
@@ -1194,7 +1227,15 @@ function applyRosterToFutureFixtures_(comp, rows){
 
   var playersRes = sbGet_('players', 'select=player_id,name');
   if(!playersRes.ok) return {updated:0, frozen:0, error:playersRes.error};
-  var idByName={}; playersRes.data.forEach(function(p){ idByName[_normName_(p.name)]=p.player_id; });
+  var idByName={},byId={}; playersRes.data.forEach(function(p){byId[p.player_id]=p;var key=_normName_(p.name);(idByName[key]||(idByName[key]=[])).push(p.player_id);});
+  var identityError='';
+  rows.forEach(function(r){
+   if(!r.player)return;
+   var hits=idByName[_normName_(r.player)]||[];
+   if(!r.playerId&&hits.length===1)r.playerId=hits[0];
+   if(!r.playerId||!byId[r.playerId]||_normName_(byId[r.playerId].name)!==_normName_(r.player))identityError='Cannot resolve '+r.player+' (team '+r.teamNo+', line '+r.line+'). Select an existing contact ID.';
+  });
+  if(identityError)return {updated:0,frozen:0,error:identityError};
 
   var fxRes = sbGet_('fixtures', 'select=fixture_id,comp_ref,round,line,scheduled,team1_id,team2_id,player1_id,player2_id,played&comp_ref=eq.'+encodeURIComponent(comp)+'&played=eq.false');
   if(!fxRes.ok) return {updated:0, frozen:0, error:fxRes.error};
@@ -1202,9 +1243,9 @@ function applyRosterToFutureFixtures_(comp, rows){
   var toUpdate=[], updated=0;
   fxRes.data.forEach(function(f){
     var t1no=teamNoById[f.team1_id], t2no=teamNoById[f.team2_id];
-    var name1=(rmap[t1no]&&rmap[t1no][f.line]), name2=(rmap[t2no]&&rmap[t2no][f.line]);
-    var pid1 = name1!=null ? (idByName[_normName_(name1)]||null) : undefined;
-    var pid2 = name2!=null ? (idByName[_normName_(name2)]||null) : undefined;
+    var row1=(rmap[t1no]&&rmap[t1no][f.line]), row2=(rmap[t2no]&&rmap[t2no][f.line]);
+    var pid1 = row1 ? row1.playerId : undefined;
+    var pid2 = row2 ? row2.playerId : undefined;
     var changed=false;
     if(pid1!==undefined && pid1!==f.player1_id) changed=true;
     if(pid2!==undefined && pid2!==f.player2_id) changed=true;
