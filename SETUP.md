@@ -21,6 +21,10 @@ Five incorrect enrollment attempts within 15 minutes pause new-device sign-in fo
 
 Administrator entry points check the signed-in Google identity on every call. `ADMIN_EMAILS` may hold a comma-separated allowlist; without it, the existing project owner and editor are the only permitted identities. All other server helpers end in `_`, preventing invocation through `google.script.run`.
 
+Use **Comp Admin → Administrators** to add or remove Google account emails. Any current administrator can maintain this club-wide list (all competitions). Each change asks for confirmation, takes effect on the next server request, and is recorded in the Apps Script execution log. The UI cannot remove the signed-in administrator; a second administrator can remove them instead. Updates use a shared lock and individual add/remove operations so simultaneous edits do not overwrite one another. The list supports up to 25 accounts. Adding an address does not send email, share Drive files, or grant Apps Script editor access.
+
+For recovery, the project owner can edit **Project Settings → Script properties → ADMIN_EMAILS** directly. Use a comma-separated list, retaining all intended administrators. Clearing the property restores the two default identities. Use the exact Google account email, not a mailing-list or forwarding address.
+
 The scorer deployment runs as the owner and permits anonymous HTTP access, with the private code validated by the backend. A plain anonymous request cannot open admin. The owner can access admin while signed in. For another authorized administrator, use a separate web-app deployment executing as **User accessing the web app**, requiring Google sign-in, with underlying spreadsheet/database script permissions as needed; do not weaken the server allowlist. Google may require the user to authorize the existing script scopes.
 
 ## Release order

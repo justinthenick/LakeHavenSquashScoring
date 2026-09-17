@@ -1,11 +1,37 @@
 // Every browser-callable admin entry point checks a Google identity.
 // Only the existing project owner and editor are authorized by default.
-function assertAdmin_(){
- var email=String(Session.getActiveUser().getEmail()||'').toLowerCase();
+function adminEmails_(){
  var configured=PropertiesService.getScriptProperties().getProperty('ADMIN_EMAILS');
- var allowed=(configured||'wed.squash@gmail.com,justin@masteryournetwork.com.au').toLowerCase().split(',').map(function(s){return s.trim();});
- if(!email||allowed.indexOf(email)<0)throw new Error('Administrator sign-in required. Open the private admin deployment with an authorized Google account.');
+ return (configured===null||configured===undefined||configured===''?'wed.squash@gmail.com,justin@masteryournetwork.com.au':configured).toLowerCase().split(',').map(function(s){return s.trim();}).filter(function(s,i,a){return s&&a.indexOf(s)===i;}).sort();
+}
+function assertAdmin_(){
+ var email=String(Session.getActiveUser().getEmail()||'').trim().toLowerCase();
+ if(!email)throw new Error('Administrator sign-in required. Google has not supplied your account identity. Open the administrator deployment while signed in to Google.');
+ if(adminEmails_().indexOf(email)<0)throw new Error('Administrator sign-in required. Your Google account is not on the administrator list. Ask an existing administrator to add your Google email in the Administrators tab.');
  return email;
+}
+function getAdminAccess(){
+ var email=assertAdmin_();
+ return {ok:true,currentEmail:email,emails:adminEmails_()};
+}
+function changeAdminAccess(action,candidate){
+ assertAdmin_();
+ var lock=LockService.getScriptLock();
+ if(!lock.tryLock(5000))throw new Error('Administrator list is busy. Please try again.');
+ try{
+  var actor=assertAdmin_(),emails=adminEmails_(),email=String(candidate||'').trim().toLowerCase();
+  if(email.length>254||! /^[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(email))throw new Error('Enter one valid Google account email address.');
+  if(action!=='add'&&action!=='remove')throw new Error('Invalid administrator action.');
+  if(action==='remove'&&email===actor)throw new Error('You cannot remove your own administrator access.');
+  var index=emails.indexOf(email);
+  if(action==='add'&&index<0){if(emails.length>=25)throw new Error('The administrator list is limited to 25 accounts.');emails.push(email);}
+  if(action==='remove'&&index>=0)emails.splice(index,1);
+  if(!emails.length)throw new Error('At least one administrator must remain.');
+  emails.sort();
+  PropertiesService.getScriptProperties().setProperty('ADMIN_EMAILS',emails.join(','));
+  console.info('Administrator access '+action+' by '+actor+': '+email);
+  return {ok:true,currentEmail:actor,emails:emails};
+ }finally{lock.releaseLock();}
 }
 // The short code is used only for device enrollment, never for result requests.
 // A global limit is required: Apps Script does not provide a trusted client IP.

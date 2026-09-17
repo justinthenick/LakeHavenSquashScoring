@@ -144,9 +144,25 @@
       <button class="tab" data-tab="results">Results</button>
       <button class="tab" data-tab="onboard">Onboard</button>
       <button class="tab" data-tab="subs">Subs</button>
+      <button class="tab" data-tab="admins">Administrators</button>
     </div>
   </div>
 
+  <section class="tabpanel" id="tab-admins">
+    <div class="card">
+      <h2>Administrators</h2>
+      <p class="muted">Administrators can manage all competitions, results and this access list. Add the email they use to sign in to Google. The club scorer code does not grant administrator access.</p>
+      <p id="adminIdentity"></p>
+      <div id="adminAccessList"></div>
+      <form id="adminAccessForm" class="row" style="margin-top:16px">
+        <div style="flex:1;min-width:240px"><label class="f" for="adminEmail">Google account email</label><input class="nm" type="email" id="adminEmail" autocomplete="email" required maxlength="254" placeholder="name@example.com"></div>
+        <button class="cta" id="adminAdd" type="submit" disabled>Add administrator</button>
+      </form>
+      <p id="adminAccessStatus" role="status" aria-live="polite"></p>
+      <button class="ghost" id="adminAccessRefresh" type="button">Refresh list</button>
+      <p class="muted">Changes apply immediately. New administrators must open the dedicated administrator link and approve Google's permissions on first use. They also need access to the relevant Google workbooks and scan folder. If Google cannot identify them on the scorer's /exec link, ask the project owner for the administrator deployment link.</p>
+    </div>
+  </section>
   <section class="tabpanel active" id="tab-scan">
     <div class="card">
       <div class="eyebrow" style="margin-bottom:8px">Score-sheet ingestion</div>
@@ -237,7 +253,37 @@ function switchTab(id){
   if(id==='subs')renderSubsTab();
   if(id==='results'){loadMrRounds();loadOutputConfig();}
   if(id==='onboard')renderOnboardTab();
+  if(id==='admins')loadAdminAccess();
 }
+var adminAccessBusy=false;
+function adminAccessState(busy){
+ adminAccessBusy=busy;
+ $('adminAdd').disabled=busy;$('adminAccessRefresh').disabled=busy;
+ Array.prototype.forEach.call($('adminAccessList').querySelectorAll('button'),function(b){b.disabled=busy;});
+}
+function renderAdminAccess(res){
+ $('adminIdentity').textContent='Signed in as '+res.currentEmail;
+ var list=$('adminAccessList');list.textContent='';
+ res.emails.forEach(function(email){
+  var row=document.createElement('div');row.className='row';row.style.marginBottom='8px';
+  var label=document.createElement('span');label.textContent=email+(email===res.currentEmail?' (you)':'');row.appendChild(label);
+  if(email!==res.currentEmail){var button=document.createElement('button');button.type='button';button.className='ghost';button.textContent='Remove';button.setAttribute('aria-label','Remove '+email);button.onclick=function(){changeAdminAccess('remove',email);};row.appendChild(button);}
+  list.appendChild(row);
+ });
+}
+function adminAccessError(err){adminAccessState(false);$('adminAccessStatus').textContent=err&&err.message?err.message:String(err);}
+function loadAdminAccess(){
+ if(adminAccessBusy)return;adminAccessState(true);$('adminAccessStatus').textContent='Loading administrators…';
+ google.script.run.withSuccessHandler(function(res){renderAdminAccess(res);adminAccessState(false);$('adminAccessStatus').textContent='';}).withFailureHandler(adminAccessError).getAdminAccess();
+}
+function changeAdminAccess(action,email){
+ if(adminAccessBusy)return;
+ if(!confirm(action==='add'?'Grant '+email+' administrator access to all competitions and the administrator list?':'Remove administrator access for '+email+'?'))return;
+ adminAccessState(true);$('adminAccessStatus').textContent='Saving…';
+ google.script.run.withSuccessHandler(function(res){renderAdminAccess(res);adminAccessState(false);if(action==='add')$('adminEmail').value='';$('adminAccessStatus').textContent=action==='add'?'Administrator added. Share the administrator link with them.':'Administrator removed. Their next admin request will be refused.';}).withFailureHandler(adminAccessError).changeAdminAccess(action,email);
+}
+$('adminAccessForm').onsubmit=function(e){e.preventDefault();changeAdminAccess('add',$('adminEmail').value.trim());};
+$('adminAccessRefresh').onclick=loadAdminAccess;
 (function(){var tabs=document.querySelectorAll('.tab');
   Array.prototype.forEach.call(tabs,function(t){t.onclick=function(){switchTab(t.getAttribute('data-tab'));};});})();
 var ROSTER=null, ROSTERTEAMS=[], ROSTERORIG={}, FILT={teams:[],lines:[]}, rosterFlash='';

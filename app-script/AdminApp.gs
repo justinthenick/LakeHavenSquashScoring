@@ -6,8 +6,9 @@
  *   1. Project Settings > Script Properties, add:
  *        MASTER_ID  = the master workbook file id
  *        GEMINI_KEY = your free Google AI Studio key
- *   2. Deploy > New deployment > Web app > Execute as: Me,
- *      Who has access: Only me (it's an admin tool).
+ *   2. Keep the scorer deployment running as the owner. For additional
+ *      admins, create a separate deployment executing as the accessing user.
+ *      See SETUP.md for the Google identity and workbook access requirements.
  * Same-origin with the backend (google.script.run), so no CORS anywhere.
  **************************************************************************/
 
@@ -50,7 +51,7 @@ function doGet(e) {
       return out_({ ok:true, msg:'Court Card backend live' }, e);
     } catch (err) { return out_({ ok:false, error:String(err) }, e); }
   }
-  try { assertAdmin_(); } catch(err) { return HtmlService.createHtmlOutput('<h1>Administrator sign-in required</h1><p>Use the private admin deployment with your authorized Google account.</p>'); }
+  try { assertAdmin_(); } catch(err) { return HtmlService.createHtmlOutput('<h1>Administrator sign-in required</h1><p>'+String(err.message||err).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];})+'</p><p>The club scorer code does not grant administrator access.</p>'); }
   return HtmlService.createHtmlOutputFromFile('Admin')
     .setTitle('Comp Admin')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
