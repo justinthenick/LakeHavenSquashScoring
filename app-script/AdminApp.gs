@@ -1830,20 +1830,24 @@ function initializeRetroResults_(comp,workbookId){
   if(!sh)throw new Error('Workbook must have a Retro Results sheet');
   sh.clear();var data=loadCompetitionData_(comp);var s=buildCompetitionStandings_(data,getRules_(comp));
   var rounds=s.rounds.sort(function(a,b){return a-b;});var maxRound=Math.max.apply(null,rounds)||0;
-  var rows=[];var col=1;
+  var col=1;
   sh.getRange(1,col).setValue('Player');sh.getRange(1,col+1).setValue('');
   for(var r=0;r<maxRound;r++){sh.getRange(1,col+2+r).setValue(r+1);}
   var lineNames={};for(var l=1;l<=5;l++){lineNames[l]=[];}
   s.currentRoster.forEach(function(p){if(lineNames[p.line])lineNames[p.line].push(p.player);});
-  var maxLineSize=Math.max.apply(null,Object.keys(lineNames).map(function(k){return lineNames[k].length;}));
   var rowNum=2;
   for(var l=1;l<=5;l++){
-    var names=lineNames[l];if(!names.length)continue;
-    var startRow=rowNum;for(var i=0;i<maxLineSize;i++){sh.getRange(rowNum+i,col).setValue(names[i]||'');}
-    ss.setNamedRange('Line'+l+'_Names',sh.getRange(startRow,col,maxLineSize,1));rowNum+=maxLineSize;
+    var names=lineNames[l];
+    var size=Math.max(1,names.length);
+    var startRow=rowNum;
+    for(var i=0;i<size;i++){sh.getRange(rowNum+i,col).setValue(names[i]||'');}
+    ss.setNamedRange('Line'+l+'_Names',sh.getRange(startRow,col,size,1));
+    rowNum+=size;
   }
   var teamNames=[];s.teams.forEach(function(t){teamNames.push(t.team);});
-  var startRow=rowNum;for(var i=0;i<teamNames.length;i++){sh.getRange(rowNum+i,col).setValue(teamNames[i]);}
-  ss.setNamedRange('Team_Names',sh.getRange(startRow,col,teamNames.length,1));
-  SpreadsheetApp.flush();return {ok:true,message:'Retro Results initialized for '+comp+' with '+maxLineSize+' players per line and '+maxRound+' rounds'};
+  var tsize=Math.max(1,teamNames.length);
+  var startRow=rowNum;
+  for(var i=0;i<tsize;i++){sh.getRange(rowNum+i,col).setValue(teamNames[i]||'');}
+  ss.setNamedRange('Team_Names',sh.getRange(startRow,col,tsize,1));
+  SpreadsheetApp.flush();return {ok:true,message:'Retro Results initialized for '+comp+' with '+maxRound+' rounds'};
 }
