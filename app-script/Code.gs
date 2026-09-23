@@ -392,7 +392,9 @@ function fixtureProgress_(b){
  return {ok:true};
 }
 function fixtureStatuses_(fixtures){
- var logs=requireSb_(sbGet_('match_log','select=fixture_id,games_p1,games_p2,score_line,player1_id,player2_id')).data,byId={};logs.forEach(function(m){byId[m.fixture_id]=m;});
+ var fxIds=fixtures.filter(function(f){return f.fixture_id;}).map(function(f){return f.fixture_id;});
+ var logs=fxIds.length?requireSb_(sbGet_('match_log','select=fixture_id,games_p1,games_p2,score_line,player1_id,player2_id&fixture_id=in.('+fxIds.join(',')+')')).data:[];
+ var byId={};logs.forEach(function(m){byId[m.fixture_id]=m;});
  var cache=CacheService.getScriptCache(),cached={};for(var i=0;i<fixtures.length;i+=100){var part=cache.getAll(fixtures.slice(i,i+100).map(function(f){return 'progress:'+f.fixture_id;}));Object.keys(part).forEach(function(k){cached[k]=part[k];});}
  var out={};fixtures.forEach(function(f){var m=byId[f.fixture_id],p=cached['progress:'+f.fixture_id];p=p?JSON.parse(p):null;
   out[f.fixture_id]=m?{status:/scratched/i.test(m.score_line||'')?'Scratched':'Played',result:m.score_line||m.games_p1+'–'+m.games_p2,actual1Id:m.player1_id,actual2Id:m.player2_id}:f.played?{status:'Needs review',result:'Played flag; result missing'}:p?{status:'Underway',result:p.games.join('–')+' games · '+p.points.join('–')+' points',actualNames:p.players,updated:p.updated}:{status:'Not yet played',result:''};
