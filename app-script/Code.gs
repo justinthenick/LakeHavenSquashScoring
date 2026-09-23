@@ -42,6 +42,22 @@ function findSheet_(ss, name) {
  *   Id | Player1 | Player2 | Color1 | Color2 | PointsToWin | BestOf | Event | Venue | Played
  * MatchLog / GameLog are created automatically with headers on first save. */
 
+function doGet(e) {
+  try {
+    requireClubCode_(e.parameter.secret);
+    var action = e.parameter.action;
+    if (action === 'fixtures') return out_({ fixtures: readFixtures_() }, e);
+    if (action === 'players') return out_({ playerRecords: listPlayerNames_(), players: listPlayerNames_().map(function(p) { return p.name; }) }, e);
+    if (action === 'tie') return out_(tieResults_(e.parameter.fixtureId), e);
+    if (action === 'progress') {
+      var body = e.parameter.data ? JSON.parse(e.parameter.data) : {};
+      return out_(fixtureProgress_(body), e);
+    }
+    if (action === 'addPlayer') return out_(resolveOrAddPlayer_(e.parameter.name), e);
+    return out_({ ok:false, error:'unknown action' }, e);
+  } catch (err) { return out_({ ok:false, error:String(err) }, e); }
+}
+
 function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents || '{}');
