@@ -1824,6 +1824,8 @@ function applyOutputCells_(sheet,requests){
  var actual=range.getValues();cells.forEach(function(c){var want=c.value.numberValue!=null?c.value.numberValue:c.value.stringValue||'';if(actual[c.row-top][c.col-left]!==want)throw new Error('Output read-back mismatch. Inspect the workbook backup before retrying.');});
 }
 
+function testInitMPM(){
+  try{var comp='MPM';var data=loadCompetitionData_(comp);Logger.log('Fixtures: '+data.fixtures.length);Logger.log('Matches: '+data.matches.length);Logger.log('Roster: '+data.roster.length);Logger.log('Teams: '+data.teams.length);var s=buildCompetitionStandings_(data,getRules_(comp));Logger.log('CurrentRoster: '+s.currentRoster.length);Logger.log('Rounds: '+JSON.stringify(s.rounds));initializeRetroResults_(comp,'1kwrwSooSPOp4Z8Y_A8p3Fc9NVaf8qM3VTKIeiOyfcjQ');Logger.log('OK');}catch(err){Logger.log('ERROR: '+err.message);throw err;}}
 function initializeRetroResults_(comp,workbookId){
   if(!comp||!workbookId)throw new Error('Competition and workbook ID required');
   var ss=SpreadsheetApp.openById(workbookId);var sh=findSheet_(ss,'Retro Results');
