@@ -1848,6 +1848,10 @@ function initializeRetroResults_(comp,workbookId){
   }
   var teamNames=[];s.teams.forEach(function(t){teamNames.push(t.team);});
   var tsize=Math.max(1,teamNames.length);
+  rowNum++;
+  sh.getRange(rowNum,col).setValue('Team');sh.getRange(rowNum,col+1).setValue('');
+  for(var r=0;r<maxRound;r++){sh.getRange(rowNum,col+2+r).setValue(r+1);}
+  rowNum++;
   var startRow=rowNum;
   for(var i=0;i<tsize;i++){sh.getRange(rowNum+i,col).setValue(teamNames[i]||'');}
   ss.setNamedRange('Team_Names',sh.getRange(startRow,col,tsize,1));
