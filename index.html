@@ -75,6 +75,9 @@
   .fx{display:flex;justify-content:space-between;align-items:center;padding:16px;
     background:#fff;border:1px solid var(--line);border-radius:14px;text-align:left;font-weight:700}
   .fx small{display:block;color:var(--muted);font-weight:600;margin-top:3px}
+  .arrive-pill{font:inherit;font-weight:700;border:1px solid var(--line);background:#f3f4f6;color:inherit;border-radius:20px;padding:2px 10px;margin:0 2px}
+  .arrive-pill.arrived{background:#dff2e5;border-color:#238755;color:#1c6b3d}
+  .arrive-pill:disabled{opacity:0.5}
   .banner{font-size:13px;padding:10px 14px;border-radius:12px;margin-bottom:4px;font-weight:700}
   .banner.warn{background:#fff4d6;color:#7a5c00}
   .banner.err{background:#fbe1de;color:#8a231a}
@@ -267,28 +270,7 @@
       <select id="fxLine"><option value="">All lines</option><option value="1">Line 1</option><option value="2">Line 2</option><option value="3">Line 3</option><option value="4">Line 4</option><option value="5">Line 5</option></select>
     </div>
     <label style="display:block;margin:8px 0"><input id="hidePlayed" type="checkbox"> Hide played / scratched fixtures</label><input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
-
-    <div id="markArrivals" class="card" style="margin-bottom:16px;display:none">
-      <div class="eyebrow">Mark Player Arrivals</div>
-      <label class="field">Select fixture</label>
-      <select id="arrivalFixtureSelect" style="width:100%;padding:8px;margin-bottom:8px">
-        <option value="">-- Pick a fixture --</option>
-      </select>
-
-      <div id="arrivalCheckboxes" style="display:none">
-        <label style="display:block;margin:8px 0">
-          <input type="checkbox" id="arrivals_p1"> <span id="arrivals_p1_name"></span>
-        </label>
-        <label style="display:block;margin:8px 0">
-          <input type="checkbox" id="arrivals_p2"> <span id="arrivals_p2_name"></span>
-        </label>
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <button class="cta" id="clearArrivalsBtn" style="flex:1">Clear</button>
-          <button class="cta" id="markArrivalsBtn" style="flex:1">Mark arrived</button>
-        </div>
-      </div>
-    </div>
-
+    <div class="hint" style="margin-bottom:6px">Tap a player's name on a fixture below to mark them as arrived.</div>
     <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
     <button class="cta ghost" id="reloadFx">Reload fixtures</button>
     <button class="cta ghost" id="pendingSetup">View pending results / retry sync</button>
@@ -725,24 +707,44 @@ function drawFixtures(list,note){
   var host=$('fixtures');host.innerHTML=note?('<div class="hint">'+esc(note)+'</div>'):'';
   if(!list.length){host.innerHTML+='<div class="hint">No matching fixtures.</div>';return;}
   list.forEach(function(fx){
-    var b=document.createElement('button');b.className='fx';b.style.borderLeft='5px solid '+(fx.status==='Played'?'#238755':fx.status==='Underway'?'#d28a13':fx.status==='Scratched'?'#9c5665':'#8c99aa');
+    var row=document.createElement('div');row.className='fx';row.style.borderLeft='5px solid '+(fx.status==='Played'?'#238755':fx.status==='Underway'?'#d28a13':fx.status==='Scratched'?'#9c5665':'#8c99aa');
+
+    var main=document.createElement('div');main.style.flex='1';main.style.minWidth='0';main.style.cursor='pointer';
+    main.onclick=function(){if(['Played','Scratched','Needs review'].indexOf(fx.status)>=0){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');return;}applyFixture(fx);};
+
+    var playersLine=document.createElement('div');
+    var p1Arrived=!!arrivalStatus[fx.id+':'+fx.player1Id];
+    var p2Arrived=!!arrivalStatus[fx.id+':'+fx.player2Id];
+    var p1btn=document.createElement('button');p1btn.type='button';p1btn.className='arrive-pill'+(p1Arrived?' arrived':'');p1btn.textContent=fx.player1||'?';
+    var p2btn=document.createElement('button');p2btn.type='button';p2btn.className='arrive-pill'+(p2Arrived?' arrived':'');p2btn.textContent=fx.player2||'?';
+    if(!fx.player1Id)p1btn.disabled=true;
+    if(!fx.player2Id)p2btn.disabled=true;
+    p1btn.onclick=function(e){e.stopPropagation();toggleArrival_(fx,fx.player1Id,p1Arrived,p1btn);};
+    p2btn.onclick=function(e){e.stopPropagation();toggleArrival_(fx,fx.player2Id,p2Arrived,p2btn);};
+    playersLine.appendChild(p1btn);
+    playersLine.appendChild(document.createTextNode(' vs '));
+    playersLine.appendChild(p2btn);
+    main.appendChild(playersLine);
+
     var bits=[];
     if(fx.scheduled)bits.push(fx.scheduled);
     if(fx.round)bits.push('R'+fx.round+(fx.line?' L'+fx.line:''));
     if(fx.team1&&fx.team2)bits.push(fx.team1+' v '+fx.team2);
     var meta=bits.join(' · ');
+    if(meta){var m=document.createElement('small');m.textContent=meta;main.appendChild(m);}
 
-    // Check arrival status
-    var p1_arrived = arrivalStatus[fx.id + ':' + fx.player1Id];
-    var p2_arrived = arrivalStatus[fx.id + ':' + fx.player2Id];
-    var arrivalBadge = '';
-    if(p1_arrived && p2_arrived) arrivalBadge = ' ✓ Ready';
-    else if(p1_arrived || p2_arrived) arrivalBadge = ' ✓ Partial';
+    var statusLine=document.createElement('small');
+    statusLine.innerHTML='<b>'+esc(fx.status||'Not yet played')+'</b>'+(fx.result?' · '+esc(fx.result):'');
+    main.appendChild(statusLine);
 
-    b.innerHTML='<span>'+esc(fx.player1||'?')+' vs '+esc(fx.player2||'?')+
-      (meta?'<small>'+esc(meta)+'</small>':'')+'<small><b>'+esc(fx.status||'Not yet played')+'</b>'+ (fx.result?' · '+esc(fx.result):'')+(arrivalBadge?'<span style="color:#238755">'+esc(arrivalBadge)+'</span>':'')+'</small>'+((fx.actualPlayers||[]).some(function(n,i){return n&&n!==fx['player'+(i+1)];})?'<small>Played by '+esc(fx.actualPlayers.join(' vs '))+'</small>':'')+'</span><span>›</span>';
-    b.onclick=function(){if(['Played','Scratched','Needs review'].indexOf(fx.status)>=0){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');return;}applyFixture(fx);};
-    host.appendChild(b);
+    if((fx.actualPlayers||[]).some(function(n,i){return n&&n!==fx['player'+(i+1)];})){
+      var pl=document.createElement('small');pl.textContent='Played by '+fx.actualPlayers.join(' vs ');main.appendChild(pl);
+    }
+
+    row.appendChild(main);
+    var chev=document.createElement('span');chev.textContent='›';chev.style.cursor='pointer';chev.onclick=main.onclick;
+    row.appendChild(chev);
+    host.appendChild(row);
   });
 }
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
@@ -779,107 +781,24 @@ $('fxComp').onchange=applyFixtureFilter;
 $('fxTeam').onchange=applyFixtureFilter;
 $('fxLine').onchange=applyFixtureFilter;
 
-  var arrivalDate = null;
-
-function showMarkArrivals() {
-  var fixtures = allFixtures;
-  if (!fixtures.length) {
-    $('markArrivals').style.display = 'none';
-    return;
-  }
-  
-  $('markArrivals').style.display = 'block';
-  arrivalDate = $('fxDate').value || localDate();
-  
-  // Populate fixture dropdown
-  var sel = $('arrivalFixtureSelect');
-  sel.innerHTML = '<option value="">-- Pick a fixture --</option>';
-  fixtures.forEach(function(f) {
-    var label = 'L' + (f.line || '?') + ': ' + (f.player1 || '?') + ' vs ' + (f.player2 || '?');
-    sel.innerHTML += '<option value="' + f.id + '">' + esc(label) + '</option>';
-  });
-  
-  sel.onchange = function() {
-    if (!sel.value) {
-      $('arrivalCheckboxes').style.display = 'none';
-      return;
-    }
-    
-    var fixture = fixtures.find(function(f) { return f.id === sel.value; });
-    if (!fixture) return;
-    
-    $('arrivals_p1_name').textContent = fixture.player1 || 'Player 1';
-    $('arrivals_p2_name').textContent = fixture.player2 || 'Player 2';
-    $('arrivals_p1').checked = false;
-    $('arrivals_p2').checked = false;
-    $('arrivalCheckboxes').style.display = 'block';
-  };
-}
-
-function markPlayerArrived() {
-  var sel = $('arrivalFixtureSelect');
-  var fixtureId = sel.value;
-  if (!fixtureId) return alert('Select a fixture first');
-  
-  var fixture = allFixtures.find(function(f) { return f.id === fixtureId; });
-  if (!fixture) return;
-  
-  var p1_marked = $('arrivals_p1').checked;
-  var p2_marked = $('arrivals_p2').checked;
-  
-  if (!p1_marked && !p2_marked) return alert('Select at least one player');
-  
-  // Call backend to mark arrivals
-  var calls = [];
-  if (p1_marked && fixture.player1Id) {
-    calls.push(callApi({
-      action: 'markArrival',
-      fixtureId: fixtureId,
-      playerId: fixture.player1Id,
-      date: arrivalDate
-    }));
-  }
-  if (p2_marked && fixture.player2Id) {
-    calls.push(callApi({
-      action: 'markArrival',
-      fixtureId: fixtureId,
-      playerId: fixture.player2Id,
-      date: arrivalDate
-    }));
-  }
-  
-  Promise.all(calls).then(function(results) {
-    console.log('Arrival marking results:', results);
-    results.forEach(function(r, i) {
-      console.log('Result ' + i + ':', JSON.stringify(r));
-    });
-    if(results[0] && results[0].ok === false) {
-      alert('Error: ' + (results[0].msg || results[0].error || 'Failed'));
-      return;
-    }
-    alert('Players marked as arrived');
-    sel.value = '';
-    $('arrivalCheckboxes').style.display = 'none';
-  }).catch(function(err) {
-    console.error('Arrival marking error:', err);
-    alert('Error: ' + (err.msg || err.reason || 'Failed to mark arrivals'));
+// Tap a player's name on a fixture card to toggle their arrival status.
+function toggleArrival_(fx, playerId, currentlyArrived, btn){
+  if(!playerId){alert('This player is not linked to a player record yet.');return;}
+  var date=$('fxDate').value||localDate();
+  btn.disabled=true;
+  var call=currentlyArrived
+    ? callApi({action:'clearArrival', fixtureId:fx.id, playerId:playerId, date:date})
+    : callApi({action:'markArrival', fixtureId:fx.id, playerId:playerId, date:date});
+  call.then(function(){
+    var key=fx.id+':'+playerId;
+    if(currentlyArrived) delete arrivalStatus[key]; else arrivalStatus[key]=new Date().toISOString();
+    applyFixtureFilter();
+  }).catch(function(err){
+    btn.disabled=false;
+    alert('Could not update arrival: '+(err.msg||err.reason||'unknown error'));
   });
 }
 
-$('markArrivalsBtn').onclick = markPlayerArrived;
-$('clearArrivalsBtn').onclick = function() {
-  $('arrivals_p1').checked = false;
-  $('arrivals_p2').checked = false;
-};
-
-// Show mark arrivals section when fixtures load
-var origRenderFixtures = window.renderFixtures;
-window.renderFixtures = function(list) {
-  origRenderFixtures(list);
-  showMarkArrivals();
-};
-
-  
 /* ---- start match ---- */
 $('start').onclick=function(){
   var n=names();

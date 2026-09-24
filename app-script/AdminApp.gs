@@ -49,6 +49,7 @@ function doGet(e) {
       if (action === 'players')  return out_({ ok:true, players: listPlayerNames_().map(function(p){return p.name;}), playerRecords:listPlayerNames_() }, e);
       if (action === 'addPlayer') return out_(resolveOrAddPlayer_(e.parameter.name || ''), e);
       if (action === 'markArrival') return out_(markPlayerArrived(e.parameter.fixtureId, e.parameter.playerId, 'default-venue', e.parameter.date), e);
+      if (action === 'clearArrival') return out_(clearArrival(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
       if (action === 'arrivalStatus') {
         var fixtureIds = e.parameter.fixtureIds ? JSON.parse(e.parameter.fixtureIds) : [];
         return out_(getArrivalStatusForFixtures(fixtureIds, e.parameter.date), e);
