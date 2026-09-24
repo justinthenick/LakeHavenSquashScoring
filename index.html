@@ -601,7 +601,7 @@ function refreshFirstServeLabels(){var n=names();$('fs1').textContent=n[0];$('fs
    it's in the roster for every following week too. */
 var allPlayers=[],playerRecords=[];
 function fetchPlayers(){return callApi({action:'players'}).then(function(d){playerRecords=d.playerRecords||[];return d.players||[];});}
-function loadPlayers(){ if(!scriptConfigured())return; fetchPlayers().then(function(list){allPlayers=list;}).catch(function(){}); }
+function loadPlayers(){ if(!scriptConfigured())return; fetchPlayers().then(function(list){allPlayers=list;}).catch(function(err){console.error('Failed to load players:',err.msg||err.reason||'unknown error');}); }
 
 function lockField(i,on){
   var el=$('n'+(i+1)); if(!el)return; el.readOnly=!!on; el.classList.toggle('locked',!!on);
@@ -628,7 +628,7 @@ function addNewPlayer(i,name){
   var host=$('sug'+(i+1));
   if(host) host.innerHTML='<div class="hint" style="padding:10px 0">Adding\u2026</div>';
   callApi({action:'addPlayer',name:name}).then(function(d){
-    if(d&&d.name){ if(allPlayers.indexOf(d.name)<0) allPlayers.push(d.name); $('n'+(i+1)).value=d.name; }
+    if(d&&d.name){ if(allPlayers.indexOf(d.name)<0) allPlayers.push(d.name); $('n'+(i+1)).value=d.name; loadPlayers(); }
     hideSuggest(i); refreshFirstServeLabels();
   }).catch(function(err){
     if(host) host.innerHTML='<div class="hint">Couldn\u2019t add player'+(err&&err.msg?(': '+esc(err.msg)):'')+'. Try again.</div>';
