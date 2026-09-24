@@ -27,7 +27,7 @@ function sbHeaders_(extra){
 // GET rows. query is the raw PostgREST query string, e.g.
 // "select=*&comp_ref=eq.MPM202609&order=round.asc"
 function sbGet_(table,query){
- var keys={player_aliases:'alias_id',comps:'comp_ref',players:'player_id',teams:'team_id',roster:'roster_id',roster_substitutes:'player_id',fixtures:'fixture_id',match_log:'match_id',game_log:'game_pk',rally_log:'rally_pk'};
+ var keys={player_aliases:'alias_id',comps:'comp_ref',players:'player_id',teams:'team_id',roster:'roster_id',roster_substitutes:'player_id',fixtures:'fixture_id',match_log:'match_id',game_log:'game_pk',rally_log:'rally_pk',player_arrivals:'id'};
  if(!keys[table])throw new Error('Unsupported table');
  query=query||'select=*';
  if(table==='players'){var aliases=requireSb_(sbGet_('player_aliases','select=alias_id')).data;if(aliases.length)query+='&player_id=not.in.('+aliases.map(function(a){return a.alias_id;}).join(',')+')';}
