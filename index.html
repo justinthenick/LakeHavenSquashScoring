@@ -267,28 +267,6 @@
       <select id="fxLine"><option value="">All lines</option><option value="1">Line 1</option><option value="2">Line 2</option><option value="3">Line 3</option><option value="4">Line 4</option><option value="5">Line 5</option></select>
     </div>
     <label style="display:block;margin:8px 0"><input id="hidePlayed" type="checkbox"> Hide played / scratched fixtures</label><input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
-
-    <div id="markArrivals" class="card" style="margin-bottom:16px;display:none">
-      <div class="eyebrow">Mark Player Arrivals</div>
-      <label class="field">Select fixture</label>
-      <select id="arrivalFixtureSelect" style="width:100%;padding:8px;margin-bottom:8px">
-        <option value="">-- Pick a fixture --</option>
-      </select>
-
-      <div id="arrivalCheckboxes" style="display:none">
-        <label style="display:block;margin:8px 0">
-          <input type="checkbox" id="arrivals_p1"> <span id="arrivals_p1_name"></span>
-        </label>
-        <label style="display:block;margin:8px 0">
-          <input type="checkbox" id="arrivals_p2"> <span id="arrivals_p2_name"></span>
-        </label>
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <button class="cta" id="clearArrivalsBtn" style="flex:1">Clear</button>
-          <button class="cta" id="markArrivalsBtn" style="flex:1">Mark arrived</button>
-        </div>
-      </div>
-    </div>
-
     <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
     <button class="cta ghost" id="reloadFx">Reload fixtures</button>
     <button class="cta ghost" id="pendingSetup">View pending results / retry sync</button>
@@ -623,7 +601,7 @@ function refreshFirstServeLabels(){var n=names();$('fs1').textContent=n[0];$('fs
    it's in the roster for every following week too. */
 var allPlayers=[],playerRecords=[];
 function fetchPlayers(){return callApi({action:'players'}).then(function(d){playerRecords=d.playerRecords||[];return d.players||[];});}
-function loadPlayers(){ if(!scriptConfigured())return; fetchPlayers().then(function(list){allPlayers=list;}).catch(function(err){console.error('Failed to load players:',err.msg||err.reason||'unknown error');}); }
+function loadPlayers(){ if(!scriptConfigured())return; fetchPlayers().then(function(list){allPlayers=list;}).catch(function(){}); }
 
 function lockField(i,on){
   var el=$('n'+(i+1)); if(!el)return; el.readOnly=!!on; el.classList.toggle('locked',!!on);
@@ -650,7 +628,7 @@ function addNewPlayer(i,name){
   var host=$('sug'+(i+1));
   if(host) host.innerHTML='<div class="hint" style="padding:10px 0">Adding\u2026</div>';
   callApi({action:'addPlayer',name:name}).then(function(d){
-    if(d&&d.name){ if(allPlayers.indexOf(d.name)<0) allPlayers.push(d.name); $('n'+(i+1)).value=d.name; loadPlayers(); }
+    if(d&&d.name){ if(allPlayers.indexOf(d.name)<0) allPlayers.push(d.name); $('n'+(i+1)).value=d.name; }
     hideSuggest(i); refreshFirstServeLabels();
   }).catch(function(err){
     if(host) host.innerHTML='<div class="hint">Couldn\u2019t add player'+(err&&err.msg?(': '+esc(err.msg)):'')+'. Try again.</div>';
@@ -750,8 +728,7 @@ $('fxComp').onchange=applyFixtureFilter;
 $('fxTeam').onchange=applyFixtureFilter;
 $('fxLine').onchange=applyFixtureFilter;
 
-/* Phase 1: Player Arrival Tracking */
-var arrivalDate = null;
+  var arrivalDate = null;
 
 function showMarkArrivals() {
   var fixtures = allFixtures;
@@ -759,26 +736,27 @@ function showMarkArrivals() {
     $('markArrivals').style.display = 'none';
     return;
   }
-
+  
   $('markArrivals').style.display = 'block';
   arrivalDate = $('fxDate').value || localDate();
-
+  
+  // Populate fixture dropdown
   var sel = $('arrivalFixtureSelect');
   sel.innerHTML = '<option value="">-- Pick a fixture --</option>';
   fixtures.forEach(function(f) {
     var label = 'L' + (f.line || '?') + ': ' + (f.player1 || '?') + ' vs ' + (f.player2 || '?');
     sel.innerHTML += '<option value="' + f.id + '">' + esc(label) + '</option>';
   });
-
+  
   sel.onchange = function() {
     if (!sel.value) {
       $('arrivalCheckboxes').style.display = 'none';
       return;
     }
-
+    
     var fixture = fixtures.find(function(f) { return f.id === sel.value; });
     if (!fixture) return;
-
+    
     $('arrivals_p1_name').textContent = fixture.player1 || 'Player 1';
     $('arrivals_p2_name').textContent = fixture.player2 || 'Player 2';
     $('arrivals_p1').checked = false;
@@ -791,23 +769,34 @@ function markPlayerArrived() {
   var sel = $('arrivalFixtureSelect');
   var fixtureId = sel.value;
   if (!fixtureId) return alert('Select a fixture first');
-
+  
   var fixture = allFixtures.find(function(f) { return f.id === fixtureId; });
   if (!fixture) return;
-
+  
   var p1_marked = $('arrivals_p1').checked;
   var p2_marked = $('arrivals_p2').checked;
-
+  
   if (!p1_marked && !p2_marked) return alert('Select at least one player');
-
+  
+  // Call backend to mark arrivals
   var calls = [];
   if (p1_marked && fixture.player1Id) {
-    calls.push(callApi({action:'markArrival',fixtureId:fixtureId,playerId:fixture.player1Id,date:arrivalDate}));
+    calls.push(callApi({
+      action: 'markArrival',
+      fixtureId: fixtureId,
+      playerId: fixture.player1Id,
+      date: arrivalDate
+    }));
   }
   if (p2_marked && fixture.player2Id) {
-    calls.push(callApi({action:'markArrival',fixtureId:fixtureId,playerId:fixture.player2Id,date:arrivalDate}));
+    calls.push(callApi({
+      action: 'markArrival',
+      fixtureId: fixtureId,
+      playerId: fixture.player2Id,
+      date: arrivalDate
+    }));
   }
-
+  
   Promise.all(calls).then(function() {
     alert('Players marked as arrived');
     sel.value = '';
@@ -817,19 +806,20 @@ function markPlayerArrived() {
   });
 }
 
-if($('markArrivalsBtn')) $('markArrivalsBtn').onclick = markPlayerArrived;
-if($('clearArrivalsBtn')) $('clearArrivalsBtn').onclick = function() {
+$('markArrivalsBtn').onclick = markPlayerArrived;
+$('clearArrivalsBtn').onclick = function() {
   $('arrivals_p1').checked = false;
   $('arrivals_p2').checked = false;
 };
 
-// Show mark arrivals section when fixtures are rendered
-var origApplyFixtureFilter = applyFixtureFilter;
-applyFixtureFilter = function() {
-  origApplyFixtureFilter();
+// Show mark arrivals section when fixtures load
+var origRenderFixtures = window.renderFixtures;
+window.renderFixtures = function(list) {
+  origRenderFixtures(list);
   showMarkArrivals();
 };
 
+  
 /* ---- start match ---- */
 $('start').onclick=function(){
   var n=names();
@@ -840,6 +830,7 @@ $('start').onclick=function(){
     bestOf:activeFixture?activeFixture.bestOf||5:5,
     firstServer:parseInt(pressedVal($('firstServe')),10)
   };
+  if(!activeFixture){alert('Select a fixture before starting a competition match.');return;}
   if(!n[0]||!n[1]||n[0]===n[1]){alert('Select two different players.');return;}
   lastGames=0;
   M=createMatch(cfg);
@@ -1180,7 +1171,7 @@ function showResume(saved){
   $('rDiscard').onclick=function(){clearActive();el.innerHTML='';};
 }
 
-if($('fxDate'))$('fxDate').value=localDate();
+if($('fxDate')&&!$('fxDate').value)$('fxDate').value=localDate();
 refreshFirstServeLabels();loadFixtures();loadPlayers();
 var _saved=loadActive();if(_saved&&_saved.M)showResume(_saved);
 // try to drain any queued results on load
