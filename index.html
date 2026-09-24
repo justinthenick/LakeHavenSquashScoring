@@ -680,6 +680,8 @@ function syncSelect(id,allLabel,values){
   sel.innerHTML='<option value="">'+allLabel+'</option>'+values.map(function(v){return '<option value="'+esc(v)+'"'+(v===cur?' selected':'')+'>'+esc(v)+'</option>';}).join('');
   if(cur&&values.indexOf(cur)<0)sel.value='';
 }
+var arrivalStatus = {};
+
 function applyFixtureFilter(){
   var date=$('fxDate').value||localDate();
   var onDate=allFixtures.filter(function(f){return String(f.scheduled||'')===date;});
@@ -698,7 +700,28 @@ function applyFixtureFilter(){
   });
   var note='';
   if(allFixtures.length && !onDate.length) note='No fixtures on '+date+'. Pick another date above.';
-  drawFixtures(shown,note);
+
+  // Fetch arrival status for fixtures on this date
+  var fixtureIds = onDate.map(function(f) { return f.id; });
+  if(fixtureIds.length && scriptConfigured()) {
+    callApi({action:'arrivalStatus', fixtureIds:JSON.stringify(fixtureIds), date:date})
+      .then(function(result) {
+        arrivalStatus = {};
+        if(result.data) {
+          result.data.forEach(function(row) {
+            var key = row.fixture_id + ':' + row.player_id;
+            arrivalStatus[key] = row.arrived_at;
+          });
+        }
+        drawFixtures(shown, note);
+      })
+      .catch(function(err) {
+        console.log('Failed to fetch arrival status:', err);
+        drawFixtures(shown, note);
+      });
+  } else {
+    drawFixtures(shown, note);
+  }
 }
 function drawFixtures(list,note){
   var host=$('fixtures');host.innerHTML=note?('<div class="hint">'+esc(note)+'</div>'):'';
@@ -710,8 +733,16 @@ function drawFixtures(list,note){
     if(fx.round)bits.push('R'+fx.round+(fx.line?' L'+fx.line:''));
     if(fx.team1&&fx.team2)bits.push(fx.team1+' v '+fx.team2);
     var meta=bits.join(' · ');
+
+    // Check arrival status
+    var p1_arrived = arrivalStatus[fx.id + ':' + fx.player1Id];
+    var p2_arrived = arrivalStatus[fx.id + ':' + fx.player2Id];
+    var arrivalBadge = '';
+    if(p1_arrived && p2_arrived) arrivalBadge = ' ✓ Ready';
+    else if(p1_arrived || p2_arrived) arrivalBadge = ' ✓ Partial';
+
     b.innerHTML='<span>'+esc(fx.player1||'?')+' vs '+esc(fx.player2||'?')+
-      (meta?'<small>'+esc(meta)+'</small>':'')+'<small><b>'+esc(fx.status||'Not yet played')+'</b>'+ (fx.result?' · '+esc(fx.result):'')+'</small>'+((fx.actualPlayers||[]).some(function(n,i){return n&&n!==fx['player'+(i+1)];})?'<small>Played by '+esc(fx.actualPlayers.join(' vs '))+'</small>':'')+'</span><span>›</span>';
+      (meta?'<small>'+esc(meta)+'</small>':'')+'<small><b>'+esc(fx.status||'Not yet played')+'</b>'+ (fx.result?' · '+esc(fx.result):'')+(arrivalBadge?'<span style="color:#238755">'+esc(arrivalBadge)+'</span>':'')+'</small>'+((fx.actualPlayers||[]).some(function(n,i){return n&&n!==fx['player'+(i+1)];})?'<small>Played by '+esc(fx.actualPlayers.join(' vs '))+'</small>':'')+'</span><span>›</span>';
     b.onclick=function(){if(['Played','Scratched','Needs review'].indexOf(fx.status)>=0){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');return;}applyFixture(fx);};
     host.appendChild(b);
   });
