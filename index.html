@@ -267,6 +267,28 @@
       <select id="fxLine"><option value="">All lines</option><option value="1">Line 1</option><option value="2">Line 2</option><option value="3">Line 3</option><option value="4">Line 4</option><option value="5">Line 5</option></select>
     </div>
     <label style="display:block;margin:8px 0"><input id="hidePlayed" type="checkbox"> Hide played / scratched fixtures</label><input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
+
+    <div id="markArrivals" class="card" style="margin-bottom:16px;display:none">
+      <div class="eyebrow">Mark Player Arrivals</div>
+      <label class="field">Select fixture</label>
+      <select id="arrivalFixtureSelect" style="width:100%;padding:8px;margin-bottom:8px">
+        <option value="">-- Pick a fixture --</option>
+      </select>
+
+      <div id="arrivalCheckboxes" style="display:none">
+        <label style="display:block;margin:8px 0">
+          <input type="checkbox" id="arrivals_p1"> <span id="arrivals_p1_name"></span>
+        </label>
+        <label style="display:block;margin:8px 0">
+          <input type="checkbox" id="arrivals_p2"> <span id="arrivals_p2_name"></span>
+        </label>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button class="cta" id="clearArrivalsBtn" style="flex:1">Clear</button>
+          <button class="cta" id="markArrivalsBtn" style="flex:1">Mark arrived</button>
+        </div>
+      </div>
+    </div>
+
     <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
     <button class="cta ghost" id="reloadFx">Reload fixtures</button>
     <button class="cta ghost" id="pendingSetup">View pending results / retry sync</button>
@@ -1171,7 +1193,7 @@ function showResume(saved){
   $('rDiscard').onclick=function(){clearActive();el.innerHTML='';};
 }
 
-if($('fxDate')&&!$('fxDate').value)$('fxDate').value=localDate();
+if($('fxDate'))$('fxDate').value=localDate();
 refreshFirstServeLabels();loadFixtures();loadPlayers();
 var _saved=loadActive();if(_saved&&_saved.M)showResume(_saved);
 // try to drain any queued results on load
