@@ -379,7 +379,11 @@ function fixtureProgress_(b){
 }
 function fixtureStatuses_(fixtures){
  var fxIds=fixtures.filter(function(f){return f.fixture_id;}).map(function(f){return f.fixture_id;});
- var logs=fxIds.length?requireSb_(sbGet_('match_log','select=fixture_id,games_p1,games_p2,score_line,player1_id,player2_id&fixture_id=in.('+fxIds.join(',')+')')).data:[];
+ var logs=[];
+ for(var i=0;i<fxIds.length;i+=100){
+   var batch=fxIds.slice(i,i+100);
+   logs=logs.concat(requireSb_(sbGet_('match_log','select=fixture_id,games_p1,games_p2,score_line,player1_id,player2_id&fixture_id=in.('+batch.join(',')+')')).data);
+ }
  var byId={};logs.forEach(function(m){byId[m.fixture_id]=m;});
  var cache=CacheService.getScriptCache(),cached={};for(var i=0;i<fixtures.length;i+=100){var part=cache.getAll(fixtures.slice(i,i+100).map(function(f){return 'progress:'+f.fixture_id;}));Object.keys(part).forEach(function(k){cached[k]=part[k];});}
  var out={};fixtures.forEach(function(f){var m=byId[f.fixture_id],p=cached['progress:'+f.fixture_id];p=p?JSON.parse(p):null;
