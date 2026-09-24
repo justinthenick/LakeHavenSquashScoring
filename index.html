@@ -850,6 +850,13 @@ function markPlayerArrived() {
   
   Promise.all(calls).then(function(results) {
     console.log('Arrival marking results:', results);
+    results.forEach(function(r, i) {
+      console.log('Result ' + i + ':', JSON.stringify(r));
+    });
+    if(results[0] && results[0].ok === false) {
+      alert('Error: ' + (results[0].msg || results[0].error || 'Failed'));
+      return;
+    }
     alert('Players marked as arrived');
     sel.value = '';
     $('arrivalCheckboxes').style.display = 'none';
