@@ -655,7 +655,12 @@ wireSub(0);wireSub(1);
 
 /* fixtures list */
 var allFixtures=[];
-function renderFixtures(list){allFixtures=list; if(!$('fxDate').value)$('fxDate').value=localDate(); applyFixtureFilter();}
+function renderFixtures(list){
+  // Skip the redraw entirely when nothing changed - avoids the whole fixture
+  // list flashing (full DOM rebuild) on every 30s background poll.
+  if(allFixtures.length && JSON.stringify(list)===JSON.stringify(allFixtures)) return;
+  allFixtures=list; if(!$('fxDate').value)$('fxDate').value=localDate(); applyFixtureFilter();
+}
 function uniqSorted(arr){var s={};arr.forEach(function(x){if(x!=null&&x!=='')s[String(x)]=1;});return Object.keys(s).sort();}
 function syncSelect(id,allLabel,values){
   var sel=$(id),cur=sel.value;
@@ -684,18 +689,22 @@ function applyFixtureFilter(){
   if(allFixtures.length && !onDate.length) note='No fixtures on '+date+'. Pick another date above.';
   drawFixtures(shown, note);
 
-  // Fetch arrival status in background (don't block fixture display)
+  // Fetch arrival status in background (don't block fixture display), and
+  // only redraw if it actually changed - a full rebuild every 30s poll is
+  // visibly jarring (loses scroll position, interrupts an in-progress tap).
   var fixtureIds = onDate.map(function(f) { return f.id; });
   if(fixtureIds.length && scriptConfigured()) {
     callApi({action:'arrivalStatus', fixtureIds:JSON.stringify(fixtureIds), date:date})
       .then(function(result) {
-        arrivalStatus = {};
+        var next = {};
         if(result.data) {
           result.data.forEach(function(row) {
             var key = row.fixture_id + ':' + row.player_id;
-            arrivalStatus[key] = row.arrived_at;
+            next[key] = row.arrived_at;
           });
         }
+        if(JSON.stringify(next)===JSON.stringify(arrivalStatus)) return;
+        arrivalStatus = next;
         drawFixtures(shown, note);
       })
       .catch(function(err) {
