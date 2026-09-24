@@ -819,11 +819,13 @@ function markPlayerArrived() {
     }));
   }
   
-  Promise.all(calls).then(function() {
+  Promise.all(calls).then(function(results) {
+    console.log('Arrival marking results:', results);
     alert('Players marked as arrived');
     sel.value = '';
     $('arrivalCheckboxes').style.display = 'none';
   }).catch(function(err) {
+    console.error('Arrival marking error:', err);
     alert('Error: ' + (err.msg || err.reason || 'Failed to mark arrivals'));
   });
 }
