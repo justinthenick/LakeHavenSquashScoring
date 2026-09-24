@@ -1857,3 +1857,25 @@ function initializeRetroResults_(comp,workbookId){
   ss.setNamedRange('Team_Names',sh.getRange(startRow,col,tsize,1));
   SpreadsheetApp.flush();return {ok:true,message:'Retro Results initialized for '+comp+' with '+maxRound+' rounds'};
 }
+
+/* ========== PHASE 1: Player Arrival Tracking ========== */
+
+function markPlayerArrived(fixtureId,playerId,venueId,date){
+  if(!fixtureId||!playerId||!venueId||!date)throw new Error('Missing parameters');
+  var dateStr=String(date).split('T')[0];
+  return sbUpsert_('player_arrivals',{fixture_id:fixtureId,player_id:playerId,venue_id:venueId,date:dateStr,arrived_at:new Date().toISOString()},undefined);
+}
+
+function getArrivalStatusForFixtures(fixtureIds,date){
+  if(!fixtureIds||!fixtureIds.length)return {ok:true,data:[]};
+  var dateStr=String(date).split('T')[0];
+  var query='select=fixture_id,player_id,arrived_at&fixture_id=in.('+fixtureIds.join(',')+')&date=eq.'+encodeURIComponent(dateStr);
+  return sbGet_('player_arrivals',query);
+}
+
+function clearArrival(fixtureId,playerId,date){
+  if(!fixtureId||!playerId||!date)throw new Error('Missing parameters');
+  var dateStr=String(date).split('T')[0];
+  var filter='fixture_id=eq.'+encodeURIComponent(fixtureId)+'&player_id=eq.'+encodeURIComponent(playerId)+'&date=eq.'+encodeURIComponent(dateStr);
+  return sbDelete_('player_arrivals',filter);
+}
