@@ -700,8 +700,9 @@ function applyFixtureFilter(){
   });
   var note='';
   if(allFixtures.length && !onDate.length) note='No fixtures on '+date+'. Pick another date above.';
+  drawFixtures(shown, note);
 
-  // Fetch arrival status for fixtures on this date
+  // Fetch arrival status in background (don't block fixture display)
   var fixtureIds = onDate.map(function(f) { return f.id; });
   if(fixtureIds.length && scriptConfigured()) {
     callApi({action:'arrivalStatus', fixtureIds:JSON.stringify(fixtureIds), date:date})
@@ -717,10 +718,7 @@ function applyFixtureFilter(){
       })
       .catch(function(err) {
         console.log('Failed to fetch arrival status:', err);
-        drawFixtures(shown, note);
       });
-  } else {
-    drawFixtures(shown, note);
   }
 }
 function drawFixtures(list,note){
