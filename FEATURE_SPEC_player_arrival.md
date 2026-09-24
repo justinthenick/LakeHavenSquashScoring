@@ -148,10 +148,16 @@ Or add to existing `roster` or `fixtures` table:
 
 ---
 
-## Open Design Decisions
+## Design Decisions (FINALIZED)
 
-1. **Data model:** New table vs. extend existing? (New recommended for flexibility)
-2. **Venue identifier:** How is venue determined? Hardcoded in app? Selected per session?
-3. **Session date:** Auto-detected (today's date) or user-selectable?
-4. **Rapid entry:** Should there be a "quick entry" mode (e.g., swipe to mark arrived)?
-5. **Display format:** "Next to play" pill vs. card vs. highlight color?
+1. ✅ **Data model:** New `player_arrivals` table — provides flexibility, history tracking, and clean separation of concerns
+2. ✅ **Venue identifier:** Auto-detect from current fixture's venue; allow override in session settings modal
+3. ✅ **Session date:** Auto-detect today's date; allow date picker to change if needed for makeup matches
+4. ✅ **Rapid entry:** Add keyboard shortcuts in Phase 3:
+   - `1` / `2` — toggle player 1 / player 2 arrival in quick entry mode
+   - `Space` — toggle focused player
+   - `Enter` — confirm and move to next fixture
+5. ✅ **Display format:** 
+   - "▶ Next to play" as bright badge/pill (accent color) when both players arrived
+   - Compact fixture cards: `[L#: P1 (icon) | P2 (icon)]`
+   - Visual indicators: ✓ = arrived, ☐ = not arrived
