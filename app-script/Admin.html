@@ -144,6 +144,7 @@
       <button class="tab" data-tab="results">Results</button>
       <button class="tab" data-tab="onboard">Onboard</button>
       <button class="tab" data-tab="subs">Subs</button>
+      <button class="tab" data-tab="unavail">Player availability</button>
       <button class="tab" data-tab="admins">Administrators</button>
     </div>
   </div>
@@ -235,6 +236,28 @@
       <div id="subswrap"><div class="hint">Loading fixtures…</div></div>
     </div>
   </section>
+
+  <section class="tabpanel" id="tab-unavail">
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:8px">Add planned unavailability</div>
+      <div class="hint" style="margin-bottom:12px">Record a date range a player can't play (holiday, injury, etc). Fixtures scheduled inside this range will show the player as planned absent in the scorer app, where a substitute can be nominated.</div>
+      <div class="row">
+        <div style="flex:1;min-width:200px"><label class="f" for="uaPlayer">Player</label><input class="nm" id="uaPlayer" autocomplete="off" placeholder="Search player name…"></div>
+        <div style="min-width:150px"><label class="f" for="uaFrom">From</label><input type="date" id="uaFrom"></div>
+        <div style="min-width:150px"><label class="f" for="uaTo">To</label><input type="date" id="uaTo"></div>
+      </div>
+      <div class="row">
+        <div style="flex:1;min-width:220px"><label class="f" for="uaReason">Reason (optional)</label><input id="uaReason" placeholder="e.g. Holiday"></div>
+        <button class="cta" id="uaAdd" style="align-self:flex-end" disabled>Add unavailability</button>
+      </div>
+      <p id="uaStatus" role="status" aria-live="polite"></p>
+    </div>
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:8px">Current &amp; upcoming unavailability</div>
+      <div id="uaList"><div class="hint">Loading…</div></div>
+      <button class="ghost" id="uaRefresh" type="button" style="margin-top:10px">Refresh list</button>
+    </div>
+  </section>
 </main>
 <div id="rFloatSuggest" class="rSuggest"></div>
 <div id="drillBack" class="drillback"><div class="drillcard" id="drillCard"></div></div>
@@ -254,6 +277,7 @@ function switchTab(id){
   if(id==='results'){loadMrRounds();loadOutputConfig();}
   if(id==='onboard')renderOnboardTab();
   if(id==='admins')loadAdminAccess();
+  if(id==='unavail')loadUnavailability();
 }
 var adminAccessBusy=false;
 function adminAccessState(busy){
@@ -293,6 +317,69 @@ function loadContacts(){
     .withFailureHandler(function(){}).getContacts();
 }
 loadContacts();
+
+/* ---------- Player availability tab ---------- */
+var uaSelectedPlayerId='', uaBusy=false;
+function uaSyncAddEnabled(){
+  $('uaAdd').disabled = uaBusy || !(uaSelectedPlayerId && $('uaFrom').value && $('uaTo').value);
+}
+function uaPlayerSuggest(){
+  var input=$('uaPlayer'), host=$('rFloatSuggest');
+  var raw=input.value.trim(), ql=raw.toLowerCase();
+  uaSelectedPlayerId=''; uaSyncAddEnabled();
+  if(!ql){ host.style.display='none'; host.innerHTML=''; return; }
+  var matches=ALLCONTACTS.filter(function(c){return c.name && c.name.toLowerCase().indexOf(ql)>-1;}).slice(0,8);
+  if(!matches.length){ host.style.display='none'; host.innerHTML=''; return; }
+  host.innerHTML=matches.map(function(c){return '<button type="button" class="rSugItem" data-id="'+esc(c.id)+'">'+esc(c.name)+' ['+esc(c.id)+']</button>';}).join('');
+  var rect=input.getBoundingClientRect();
+  host.style.left=Math.round(rect.left)+'px'; host.style.top=Math.round(rect.bottom)+'px'; host.style.width=Math.max(rect.width,180)+'px'; host.style.display='block';
+  Array.prototype.forEach.call(host.querySelectorAll('.rSugItem'),function(b){
+    b.onclick=function(){
+      var c=ALLCONTACTS.filter(function(x){return String(x.id)===b.dataset.id;})[0];
+      if(c){ input.value=c.name; uaSelectedPlayerId=c.id; }
+      host.style.display='none'; host.innerHTML=''; uaSyncAddEnabled();
+    };
+  });
+}
+$('uaPlayer').oninput=uaPlayerSuggest;
+$('uaPlayer').onblur=function(){ setTimeout(function(){var h=$('rFloatSuggest'); if(h){h.style.display='none';h.innerHTML='';}},150); };
+$('uaFrom').onchange=uaSyncAddEnabled; $('uaTo').onchange=uaSyncAddEnabled;
+function uaState(busy){ uaBusy=busy; uaSyncAddEnabled(); $('uaRefresh').disabled=busy; }
+function uaError(err){ uaState(false); $('uaStatus').textContent=err&&err.message?err.message:String(err); }
+function loadUnavailability(){
+  uaState(true); $('uaStatus').textContent='Loading…';
+  google.script.run.withSuccessHandler(function(res){ uaState(false); $('uaStatus').textContent=''; renderUnavailability(res); }).withFailureHandler(uaError).getUnavailability();
+}
+function renderUnavailability(res){
+  var host=$('uaList');
+  if(!res||!res.ok){ host.innerHTML='<div class="banner warn">'+esc((res&&res.error)||'Could not load')+'</div>'; return; }
+  var rows=res.rows||[];
+  if(!rows.length){ host.innerHTML='<div class="hint">No unavailability recorded.</div>'; return; }
+  var byId={}; ALLCONTACTS.forEach(function(c){byId[c.id]=c.name;});
+  host.innerHTML='<table><tr><th>Player</th><th>From</th><th>To</th><th>Reason</th><th></th></tr>'+
+    rows.map(function(r){return '<tr><td>'+esc(byId[r.player_id]||r.player_id)+'</td><td>'+esc(r.date_from)+'</td><td>'+esc(r.date_to)+'</td><td>'+esc(r.reason||'')+'</td>'+
+      '<td><button type="button" class="ghost uaDel" data-id="'+esc(r.id)+'">Remove</button></td></tr>';}).join('')+'</table>';
+  Array.prototype.forEach.call(host.querySelectorAll('.uaDel'),function(b){
+    b.onclick=function(){
+      if(!confirm('Remove this unavailability record?'))return;
+      uaState(true); $('uaStatus').textContent='Removing…';
+      google.script.run.withSuccessHandler(function(res2){ uaState(false); $('uaStatus').textContent=''; renderUnavailability(res2); }).withFailureHandler(uaError).removeUnavailability(b.dataset.id);
+    };
+  });
+}
+$('uaAdd').onclick=function(){
+  if(!uaSelectedPlayerId)return alert('Pick a player from the suggestions list.');
+  if($('uaFrom').value>$('uaTo').value)return alert('"To" date must be on or after "From" date.');
+  uaState(true); $('uaStatus').textContent='Saving…';
+  google.script.run.withSuccessHandler(function(res){
+    uaState(false);
+    if(!res||!res.ok){ $('uaStatus').textContent=(res&&res.error)||'Could not save.'; return; }
+    $('uaPlayer').value=''; uaSelectedPlayerId=''; $('uaFrom').value=''; $('uaTo').value=''; $('uaReason').value='';
+    $('uaStatus').textContent='Added.';
+    renderUnavailability(res);
+  }).withFailureHandler(uaError).addUnavailability(uaSelectedPlayerId,$('uaFrom').value,$('uaTo').value,$('uaReason').value.trim());
+};
+$('uaRefresh').onclick=loadUnavailability;
 function renderDrawTab(){
   var comp=$('comp').value; if(!comp){ $('drawwrap').innerHTML='<div class="hint">Loading comps…</div>'; return; }
   $('drawwrap').innerHTML='<div class="hint">Loading rosters…</div>';

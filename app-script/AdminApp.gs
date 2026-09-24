@@ -1482,6 +1482,32 @@ function getContacts_(){
   return {ok:true, contacts:out_};
 }
 
+/* ---------- planned player unavailability (FEATURE_SPEC_player_unavailability.md, Phase A) ---------- */
+function getUnavailability_(){
+  var res=sbGet_('player_unavailability','select=id,player_id,date_from,date_to,reason&order=date_from.asc');
+  if(!res.ok)return {ok:false,error:res.error};
+  return {ok:true,rows:res.data};
+}
+function addUnavailability_(playerId,dateFrom,dateTo,reason){
+  playerId=String(playerId||'').trim();
+  dateFrom=String(dateFrom||'').trim();
+  dateTo=String(dateTo||'').trim();
+  if(!playerId)throw new Error('Select a player.');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(dateFrom)||!/^\d{4}-\d{2}-\d{2}$/.test(dateTo))throw new Error('Enter valid from/to dates.');
+  if(dateTo<dateFrom)throw new Error('"To" date must be on or after "From" date.');
+  var email=String(Session.getActiveUser().getEmail()||'');
+  var ins=sbUpsert_('player_unavailability',{player_id:playerId,date_from:dateFrom,date_to:dateTo,reason:String(reason||'').trim(),created_by:email},undefined);
+  if(!ins.ok)return {ok:false,error:ins.error};
+  return getUnavailability_();
+}
+function removeUnavailability_(id){
+  id=String(id||'').trim();
+  if(!id)throw new Error('Missing record id.');
+  var del=sbDelete_('player_unavailability','id=eq.'+encodeURIComponent(id));
+  if(!del.ok)return {ok:false,error:del.error};
+  return getUnavailability_();
+}
+
 // Report which player names in MatchLog + Roster are (not) present in Contacts, so nothing is silently orphaned.
 function reconcileNames_(){
   var ss=SpreadsheetApp.openById(prop_('MASTER_ID'));

@@ -89,6 +89,9 @@ function getRallyLog(){assertAdmin_();return getRallyLog_.apply(null,arguments);
 function getCommittedRubbers(){assertAdmin_();return getCommittedRubbers_.apply(null,arguments);}
 function deleteRubbers(){assertAdmin_();return deleteRubbers_.apply(null,arguments);}
 function getContacts(){assertAdmin_();return getContacts_.apply(null,arguments);}
+function getUnavailability(){assertAdmin_();return getUnavailability_.apply(null,arguments);}
+function addUnavailability(){assertAdmin_();return addUnavailability_.apply(null,arguments);}
+function removeUnavailability(){assertAdmin_();return removeUnavailability_.apply(null,arguments);}
 
 function getOutputConfig(){assertAdmin_();return getOutputConfig_.apply(null,arguments);}
 
