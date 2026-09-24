@@ -69,16 +69,9 @@ function doPost(e) {
 // 'played' is now a real boolean (played=eq.false) instead of "does this
 // cell have a date value in it" - a genuine simplification the relational
 // schema buys for free, not just a straight port.
-// Apps Script's UrlFetchApp enforces a max URL length; a single IN(...) filter
-// listing every id in a full-season fixture set can exceed it. Batch instead.
-function sbGetBatchedIn_(table, selectClause, idField, ids, batchSize) {
-  var out = [];
-  for (var i = 0; i < ids.length; i += batchSize) {
-    var batch = ids.slice(i, i + batchSize);
-    var res = sbGet_(table, selectClause + '&' + idField + '=in.(' + batch.join(',') + ')');
-    if (!res.ok) throw new Error(table + ' lookup: ' + res.error);
-    out = out.concat(res.data);
-  }
+function uniq_(arr) {
+  var seen = {}, out = [];
+  arr.forEach(function(v){ if(!seen[v]){ seen[v]=true; out.push(v); } });
   return out;
 }
 
@@ -89,25 +82,11 @@ function readFixtures_() {
   if (!fixtures.length) return [];
 
   var statuses=fixtureStatuses_(fixtures);
-  var playerIds = {}, teamIds = {};
-  Object.keys(statuses).forEach(function(k){var st=statuses[k];if(st.actual1Id)playerIds[st.actual1Id]=true;if(st.actual2Id)playerIds[st.actual2Id]=true;});
-  fixtures.forEach(function(f){
-    if (f.player1_id) playerIds[f.player1_id] = true;
-    if (f.player2_id) playerIds[f.player2_id] = true;
-    if (f.team1_id) teamIds[f.team1_id] = true;
-    if (f.team2_id) teamIds[f.team2_id] = true;
-  });
+  // Club rosters are small (dozens-hundreds of rows) - one unfiltered, paginated
+  // fetch per table is far cheaper than batching a long id list into many calls.
   var playerNames = {}, teamNames = {};
-  var pids = Object.keys(playerIds);
-  if (pids.length) {
-    sbGetBatchedIn_('players', 'select=player_id,name', 'player_id', pids, 40)
-      .forEach(function(p){ playerNames[p.player_id] = p.name; });
-  }
-  var tids = Object.keys(teamIds);
-  if (tids.length) {
-    sbGetBatchedIn_('teams', 'select=team_id,team_name', 'team_id', tids, 40)
-      .forEach(function(t){ teamNames[t.team_id] = t.team_name; });
-  }
+  requireSb_(sbGet_('players', 'select=player_id,name')).data.forEach(function(p){ playerNames[p.player_id] = p.name; });
+  requireSb_(sbGet_('teams', 'select=team_id,team_name')).data.forEach(function(t){ teamNames[t.team_id] = t.team_name; });
 
   var rules={};requireSb_(sbGet_('comps','select=comp_ref,points_per_game,win_by_two,best_of')).data.forEach(function(c){rules[c.comp_ref]=c;});
   var tz = 'Australia/Sydney';
@@ -387,8 +366,10 @@ function fixtureProgress_(b){
  return {ok:true};
 }
 function fixtureStatuses_(fixtures){
- var fxIds=fixtures.filter(function(f){return f.fixture_id;}).map(function(f){return f.fixture_id;});
- var logs=fxIds.length?sbGetBatchedIn_('match_log','select=fixture_id,games_p1,games_p2,score_line,player1_id,player2_id','fixture_id',fxIds,40):[];
+ // Filter match_log by the (small) set of comps in play rather than by every
+ // fixture_id individually - far fewer distinct values, so one query is safe.
+ var compRefs=uniq_(fixtures.map(function(f){return f.comp_ref;}).filter(Boolean));
+ var logs=compRefs.length?requireSb_(sbGet_('match_log','select=fixture_id,games_p1,games_p2,score_line,player1_id,player2_id&comp_ref=in.('+compRefs.join(',')+')')).data:[];
  var byId={};logs.forEach(function(m){byId[m.fixture_id]=m;});
  var cache=CacheService.getScriptCache(),cached={};for(var i=0;i<fixtures.length;i+=100){var part=cache.getAll(fixtures.slice(i,i+100).map(function(f){return 'progress:'+f.fixture_id;}));Object.keys(part).forEach(function(k){cached[k]=part[k];});}
  var out={};fixtures.forEach(function(f){var m=byId[f.fixture_id],p=cached['progress:'+f.fixture_id];p=p?JSON.parse(p):null;
