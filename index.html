@@ -77,7 +77,9 @@
   .fx small{display:block;color:var(--muted);font-weight:600;margin-top:3px}
   .arrive-pill{font:inherit;font-weight:700;border:1px solid var(--line);background:#f3f4f6;color:inherit;border-radius:20px;padding:2px 10px;margin:0 2px}
   .arrive-pill.arrived{background:#dff2e5;border-color:#238755;color:#1c6b3d}
+  .arrive-pill.absent{background:#fff7e6;border:1px dashed #b45309;color:#92400e}
   .arrive-pill:disabled{opacity:0.5}
+  .sub-link{display:block;background:none;border:none;color:#2563eb;font-weight:700;font-size:12px;padding:2px 0;text-decoration:underline;text-align:left}
   .banner{font-size:13px;padding:10px 14px;border-radius:12px;margin-bottom:4px;font-weight:700}
   .banner.warn{background:#fff4d6;color:#7a5c00}
   .banner.err{background:#fbe1de;color:#8a231a}
@@ -403,6 +405,14 @@
 <div class="rotatehint" id="rotateHint"><div><span class="ic">↻</span>Turn your device to portrait to score</div></div>
 
 <div class="overlay" id="pendingSheet"><div class="sheet" style="max-height:85vh;overflow:auto"><h2>Pending results</h2><div id="pendingList"></div><button class="cta" id="pendingRetry">Retry sync</button><button class="cta ghost" id="pendingExport">Download a backup</button><button class="cta ghost" id="pendingClose">Close</button></div></div>
+<div class="overlay" id="subPickerSheet"><div class="sheet" style="max-height:85vh;overflow:auto;text-align:left">
+  <h2 id="subPickerTitle" style="text-align:left">Nominate a substitute</h2>
+  <p class="hint" id="subPickerSubtitle"></p>
+  <input id="subPickerInput" placeholder="Search player name…" autocomplete="off" style="margin:10px 0;width:100%">
+  <div id="subPickerSuggest" class="suggest"></div>
+  <button class="cta ghost" id="subPickerClear" style="display:none;width:100%;margin-top:10px">Clear substitution</button>
+  <button class="cta ghost" id="subPickerCancel" style="width:100%;margin-top:10px">Cancel</button>
+</div></div>
 <script>
 /* ==========================================================================
    1. CONFIG — fill these two in after you deploy the Apps Script (see SETUP.md)
@@ -668,6 +678,8 @@ function syncSelect(id,allLabel,values){
   if(cur&&values.indexOf(cur)<0)sel.value='';
 }
 var arrivalStatus = {};
+var unavailablePlayerIds = {}; // playerId -> true, for the CURRENTLY selected date
+var subNominations = {}; // 'fixtureId:originalPlayerId' -> subPlayerId, for the currently shown fixtures
 
 function applyFixtureFilter(){
   var date=$('fxDate').value||localDate();
@@ -710,6 +722,32 @@ function applyFixtureFilter(){
       .catch(function(err) {
         console.log('Failed to fetch arrival status:', err);
       });
+
+    callApi({action:'unavailableOnDate', date:date})
+      .then(function(result) {
+        var next = {};
+        (result.playerIds||[]).forEach(function(id) { next[id] = true; });
+        if(JSON.stringify(next)===JSON.stringify(unavailablePlayerIds)) return;
+        unavailablePlayerIds = next;
+        drawFixtures(shown, note);
+      })
+      .catch(function(err) {
+        console.log('Failed to fetch planned unavailability:', err);
+      });
+
+    callApi({action:'subNominations', fixtureIds:JSON.stringify(fixtureIds)})
+      .then(function(result) {
+        var next = {};
+        (result.data||[]).forEach(function(row) {
+          next[row.fixture_id + ':' + row.original_player_id] = row.sub_player_id;
+        });
+        if(JSON.stringify(next)===JSON.stringify(subNominations)) return;
+        subNominations = next;
+        drawFixtures(shown, note);
+      })
+      .catch(function(err) {
+        console.log('Failed to fetch sub nominations:', err);
+      });
   }
 }
 function drawFixtures(list,note){
@@ -722,18 +760,19 @@ function drawFixtures(list,note){
     main.onclick=function(){if(['Played','Scratched','Needs review'].indexOf(fx.status)>=0){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');return;}applyFixture(fx);};
 
     var playersLine=document.createElement('div');
-    var p1Arrived=!!arrivalStatus[fx.id+':'+fx.player1Id];
-    var p2Arrived=!!arrivalStatus[fx.id+':'+fx.player2Id];
-    var p1btn=document.createElement('button');p1btn.type='button';p1btn.className='arrive-pill'+(p1Arrived?' arrived':'');p1btn.textContent=fx.player1||'?';
-    var p2btn=document.createElement('button');p2btn.type='button';p2btn.className='arrive-pill'+(p2Arrived?' arrived':'');p2btn.textContent=fx.player2||'?';
-    if(!fx.player1Id)p1btn.disabled=true;
-    if(!fx.player2Id)p2btn.disabled=true;
-    p1btn.onclick=function(e){e.stopPropagation();toggleArrival_(fx,fx.player1Id,p1Arrived,p1btn);};
-    p2btn.onclick=function(e){e.stopPropagation();toggleArrival_(fx,fx.player2Id,p2Arrived,p2btn);};
-    playersLine.appendChild(p1btn);
+    var p1=buildPlayerPill_(fx,fx.player1Id,fx.player1||'?');
+    var p2=buildPlayerPill_(fx,fx.player2Id,fx.player2||'?');
+    playersLine.appendChild(p1.btn);
     playersLine.appendChild(document.createTextNode(' vs '));
-    playersLine.appendChild(p2btn);
+    playersLine.appendChild(p2.btn);
     main.appendChild(playersLine);
+    [p1,p2].forEach(function(p){
+      if(!p.subId)return;
+      var link=document.createElement('button');link.type='button';link.className='sub-link';
+      link.textContent='Change/clear substitute for '+p.playerName;
+      link.onclick=function(e){e.stopPropagation();openSubPicker_(fx,p.playerId,p.playerName,true);};
+      main.appendChild(link);
+    });
 
     var bits=[];
     if(fx.scheduled)bits.push(fx.scheduled);
@@ -761,14 +800,17 @@ function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;
 function applyFixture(fx){
   activeFixture=fx;
   $('formatHint').textContent='Format: '+(fx.pointsToWin||15)+' points, best of '+(fx.bestOf||5)+', '+(fx.winByTwo?'win by two.':'sudden death (no win-by-two).');
-  $('n1').value=fx.player1||'';$('n2').value=fx.player2||'';
-  plannedNames=[fx.player1||'',fx.player2||''];
-  $('sub1').checked=false;$('sub2').checked=false;
+  var p1SubId=subNominations[fx.id+':'+fx.player1Id], p2SubId=subNominations[fx.id+':'+fx.player2Id];
+  var p1Name=p1SubId?(playerNameById_(p1SubId)||fx.player1):fx.player1;
+  var p2Name=p2SubId?(playerNameById_(p2SubId)||fx.player2):fx.player2;
+  $('n1').value=p1Name||'';$('n2').value=p2Name||'';
+  plannedNames=[p1Name||'',p2Name||''];
+  $('sub1').checked=!!p1SubId;$('sub2').checked=!!p2SubId;
   lockField(0,true);lockField(1,true);
   if(fx.color1){chosen.c1=fx.color1;}if(fx.color2){chosen.c2=fx.color2;}
   buildSwatches($('sw1'),'c1');buildSwatches($('sw2'),'c2');
   refreshFirstServeLabels();
-  banner('setupBanner','ok','Loaded: '+(fx.player1||'?')+' vs '+(fx.player2||'?')+'. Adjust below or start.');
+  banner('setupBanner','ok','Loaded: '+(p1Name||'?')+' vs '+(p2Name||'?')+'. Adjust below or start.');
   window.scrollTo(0,document.body.scrollHeight);
 }
 function banner(id,kind,msg){var el=$(id);if(!msg){el.innerHTML='';return;}el.innerHTML='<div class="banner '+kind+'">'+esc(msg)+'</div>';}
@@ -807,6 +849,103 @@ function toggleArrival_(fx, playerId, currentlyArrived, btn){
     alert('Could not update arrival: '+(err.msg||err.reason||'unknown error'));
   });
 }
+
+// Builds the tappable pill for one player slot on a fixture card. Three
+// states: a sub is already nominated (show sub, tap toggles the SUB's
+// arrival); the rostered player is planned-absent with no sub yet (tap
+// opens the sub picker instead of toggling arrival); or the normal case.
+function playerNameById_(id){
+  var p=playerRecords.filter(function(x){return x.id===id;})[0];
+  return p?p.name:'';
+}
+function buildPlayerPill_(fx, playerId, playerName){
+  var subId = playerId ? subNominations[fx.id+':'+playerId] : '';
+  var isAbsent = !subId && playerId && unavailablePlayerIds[playerId];
+  var btn=document.createElement('button');btn.type='button';
+  if(subId){
+    var subName=playerNameById_(subId)||'Substitute';
+    var arrived=!!arrivalStatus[fx.id+':'+subId];
+    btn.className='arrive-pill'+(arrived?' arrived':'');
+    btn.textContent=subName+' (sub)';
+    btn.onclick=function(e){e.stopPropagation();toggleArrival_(fx,subId,arrived,btn);};
+  } else if(isAbsent){
+    btn.className='arrive-pill absent';
+    btn.textContent=playerName+' (away)';
+    btn.onclick=function(e){e.stopPropagation();openSubPicker_(fx,playerId,playerName,false);};
+  } else {
+    var arrived2=!!arrivalStatus[fx.id+':'+playerId];
+    btn.className='arrive-pill'+(arrived2?' arrived':'');
+    btn.textContent=playerName;
+    if(!playerId)btn.disabled=true;
+    btn.onclick=function(e){e.stopPropagation();toggleArrival_(fx,playerId,arrived2,btn);};
+  }
+  return {btn:btn, subId:subId, playerId:playerId, playerName:playerName};
+}
+
+/* ---- sub nomination picker ---- */
+var subPickerCtx=null;
+function openSubPicker_(fx, playerId, playerName, hasSub){
+  subPickerCtx={fx:fx, playerId:playerId, playerName:playerName};
+  $('subPickerTitle').textContent='Nominate a substitute for '+playerName;
+  $('subPickerSubtitle').textContent=hasSub?playerName+' currently has a substitute nominated for this fixture.':playerName+' is marked unavailable for this date.';
+  $('subPickerInput').value='';
+  $('subPickerSuggest').innerHTML='';
+  $('subPickerClear').style.display=hasSub?'block':'none';
+  $('subPickerSheet').classList.add('active');
+  $('subPickerInput').focus();
+}
+function closeSubPicker_(){$('subPickerSheet').classList.remove('active');subPickerCtx=null;}
+$('subPickerCancel').onclick=closeSubPicker_;
+$('subPickerInput').oninput=function(){renderSubPickerSuggest_(this.value);};
+function renderSubPickerSuggest_(q){
+  var host=$('subPickerSuggest');
+  var raw=(q||'').trim(), ql=raw.toLowerCase();
+  if(!ql){host.innerHTML='';return;}
+  var matches=playerRecords.filter(function(p){return p.name.toLowerCase().indexOf(ql)>-1;}).slice(0,6);
+  var exact=playerRecords.some(function(p){return p.name.toLowerCase()===ql;});
+  var html=matches.map(function(p){return '<button type="button" class="sugitem" data-id="'+esc(p.id)+'">'+esc(p.name)+'</button>';}).join('');
+  if(raw && !exact) html+='<button type="button" class="sugitem add" data-add="'+esc(raw)+'">+ Add “'+esc(raw)+'” as new player</button>';
+  host.innerHTML=html;
+  [].slice.call(host.querySelectorAll('.sugitem')).forEach(function(b){
+    b.onclick=function(){
+      if(b.dataset.add!=null) addSubPlayer_(b.dataset.add);
+      else saveSubNomination_(b.dataset.id);
+    };
+  });
+}
+function addSubPlayer_(name){
+  name=(name||'').trim(); if(!name)return;
+  $('subPickerSuggest').innerHTML='<div class="hint" style="padding:10px 0">Adding…</div>';
+  callApi({action:'addPlayer',name:name}).then(function(d){
+    if(d&&d.playerId){ if(playerRecords.every(function(p){return p.id!==d.playerId;}))playerRecords.push({id:d.playerId,name:d.name}); saveSubNomination_(d.playerId); }
+    else $('subPickerSuggest').innerHTML='<div class="hint">Could not add player.</div>';
+  }).catch(function(err){
+    $('subPickerSuggest').innerHTML='<div class="hint">Couldn’t add player'+(err&&err.msg?(': '+esc(err.msg)):'')+'.</div>';
+  });
+}
+function saveSubNomination_(subPlayerId){
+  if(!subPickerCtx)return;
+  if(subPlayerId===subPickerCtx.playerId){alert('The substitute must be a different player.');return;}
+  var ctx=subPickerCtx;
+  callApi({action:'nominateSub', fixtureId:ctx.fx.id, originalPlayerId:ctx.playerId, subPlayerId:subPlayerId}).then(function(){
+    subNominations[ctx.fx.id+':'+ctx.playerId]=subPlayerId;
+    closeSubPicker_();
+    applyFixtureFilter();
+  }).catch(function(err){
+    alert('Could not save substitute: '+(err.msg||err.reason||'unknown error'));
+  });
+}
+$('subPickerClear').onclick=function(){
+  if(!subPickerCtx)return;
+  var ctx=subPickerCtx;
+  callApi({action:'clearSubNomination', fixtureId:ctx.fx.id, originalPlayerId:ctx.playerId}).then(function(){
+    delete subNominations[ctx.fx.id+':'+ctx.playerId];
+    closeSubPicker_();
+    applyFixtureFilter();
+  }).catch(function(err){
+    alert('Could not clear substitute: '+(err.msg||err.reason||'unknown error'));
+  });
+};
 
 /* ---- start match ---- */
 $('start').onclick=function(){

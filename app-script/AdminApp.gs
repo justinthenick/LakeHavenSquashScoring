@@ -54,6 +54,13 @@ function doGet(e) {
         var fixtureIds = e.parameter.fixtureIds ? JSON.parse(e.parameter.fixtureIds) : [];
         return out_(getArrivalStatusForFixtures(fixtureIds, e.parameter.date), e);
       }
+      if (action === 'unavailableOnDate') return out_(getUnavailablePlayerIds_(e.parameter.date), e);
+      if (action === 'subNominations') {
+        var subFxIds = e.parameter.fixtureIds ? JSON.parse(e.parameter.fixtureIds) : [];
+        return out_(getSubNominationsForFixtures_(subFxIds), e);
+      }
+      if (action === 'nominateSub') return out_(nominateSub(e.parameter.fixtureId, e.parameter.originalPlayerId, e.parameter.subPlayerId), e);
+      if (action === 'clearSubNomination') return out_(clearSubNomination(e.parameter.fixtureId, e.parameter.originalPlayerId), e);
       return out_({ ok:true, msg:'Court Card backend live' }, e);
     } catch (err) { return out_({ ok:false, error:String(err) }, e); }
   }
@@ -1914,4 +1921,29 @@ function clearArrival(fixtureId,playerId,date){
   var dateStr=String(date).split('T')[0];
   var filter='fixture_id=eq.'+encodeURIComponent(fixtureId)+'&player_id=eq.'+encodeURIComponent(playerId)+'&date=eq.'+encodeURIComponent(dateStr);
   return sbDelete_('player_arrivals',filter);
+}
+
+/* ---------- planned unavailability + sub nomination (FEATURE_SPEC_player_unavailability.md, Phase B) ---------- */
+function getUnavailablePlayerIds_(date){
+  var dateStr=String(date).split('T')[0];
+  var res=sbGet_('player_unavailability','select=player_id&date_from=lte.'+encodeURIComponent(dateStr)+'&date_to=gte.'+encodeURIComponent(dateStr));
+  if(!res.ok)return {ok:false,error:res.error};
+  return {ok:true,playerIds:uniq_(res.data.map(function(r){return r.player_id;}))};
+}
+function getSubNominationsForFixtures_(fixtureIds){
+  if(!fixtureIds||!fixtureIds.length)return {ok:true,data:[]};
+  return sbGet_('fixture_sub_nominations','select=fixture_id,original_player_id,sub_player_id&fixture_id=in.('+fixtureIds.join(',')+')');
+}
+function nominateSub(fixtureId,originalPlayerId,subPlayerId){
+  fixtureId=String(fixtureId||'').trim();originalPlayerId=String(originalPlayerId||'').trim();subPlayerId=String(subPlayerId||'').trim();
+  if(!fixtureId||!originalPlayerId||!subPlayerId)throw new Error('Missing parameters');
+  if(subPlayerId===originalPlayerId)throw new Error('Substitute must be a different player.');
+  var email=String(Session.getActiveUser().getEmail()||'');
+  return sbUpsert_('fixture_sub_nominations',{fixture_id:fixtureId,original_player_id:originalPlayerId,sub_player_id:subPlayerId,nominated_by:email},'fixture_id,original_player_id');
+}
+function clearSubNomination(fixtureId,originalPlayerId){
+  fixtureId=String(fixtureId||'').trim();originalPlayerId=String(originalPlayerId||'').trim();
+  if(!fixtureId||!originalPlayerId)throw new Error('Missing parameters');
+  var filter='fixture_id=eq.'+encodeURIComponent(fixtureId)+'&original_player_id=eq.'+encodeURIComponent(originalPlayerId);
+  return sbDelete_('fixture_sub_nominations',filter);
 }
