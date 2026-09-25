@@ -49,7 +49,6 @@
   .swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
   .subrow{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
   .subrow input[type="checkbox"]{width:22px;height:22px;flex:none;accent-color:var(--ink);margin:0}
-  .abandonRow{display:flex;justify-content:center;padding:6px 0 10px}
   .linklike{background:none;border:none;color:var(--muted);font-size:12px;font-weight:700;text-decoration:underline;padding:10px;min-height:auto}
   input.locked{background:var(--court-2);color:var(--muted)}
   .suggest{display:flex;flex-direction:column;margin-top:8px;border-radius:14px;overflow:hidden}
@@ -91,8 +90,9 @@
   #score{background:var(--court)}
   .scorehead{display:flex;align-items:center;justify-content:space-between;
     padding:calc(10px + var(--safe-top)) 16px 8px}
-  .scorehead .game{font-size:15px;font-weight:800}
+  .scorehead .game{font-size:15px;font-weight:800;flex:1;text-align:center;min-width:0;overflow:hidden}
   .scorehead .game b{color:var(--ink)}
+  .scorehead .game .linklike{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
   .hname{display:none;font-weight:800;font-size:15px;max-width:24vw;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .exit{color:var(--danger);font-weight:800;font-size:15px;padding:6px 8px}
@@ -212,7 +212,7 @@
     .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:19%}
     .panel .tapcue{font-size:15px}
     .footbar button{padding:14px;font-size:19px}
-    .clockbar{font-size:16px;gap:24px;padding:4px 12px 6px}
+    .clockbar{font-size:16px;gap:24px;padding:4px 12px 14px}
     .clockbar b{font-size:21px}
     .clockbar .gamesTally{padding-right:16px}
   }
@@ -240,7 +240,7 @@
   .footbar button{flex:1;padding:12px;border-radius:16px;background:var(--card);
     border:1px solid var(--line);font-weight:800;font-size:15px}
   .clockbar{flex:none;display:flex;align-items:center;justify-content:center;gap:16px;
-    padding:2px 12px 4px;color:var(--muted);font-weight:700;font-size:12px;line-height:1.2}
+    padding:2px 12px 12px;color:var(--muted);font-weight:700;font-size:12px;line-height:1.2}
   .clockbar b{color:var(--ink);font-size:15px;font-weight:900}
   .clockbar .gamesTally{display:flex;gap:10px;color:var(--ink);padding-right:10px;border-right:1px solid var(--line)}
   .clockbar .gamesTally .gt-l{white-space:nowrap}
@@ -334,11 +334,10 @@
   <div class="scorehead">
     <button class="exit" id="exit">Exit</button>
     <span class="hname" id="hname0"></span>
-    <div class="game"></div>
+    <div class="game"><button id="abandonBtn" class="linklike">Match abandoned — nominate winner</button></div>
     <span class="hname" id="hname1"></span>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
-  <div class="abandonRow"><button id="abandonBtn" class="linklike">Match abandoned — nominate winner</button></div>
   <div class="clockbar tnum">
     <span class="gamesTally"><span class="gt-l">Game <b id="gameNo">1</b></span><span class="gt-l">Games <b id="gamesLine">0–0</b></span></span>
     <span>Game <b id="gameClock">00:00</b></span>
@@ -589,7 +588,7 @@ var PALETTE=['#e6913c','#5aa1e0','#e58ca0','#79c4ac','#6b52ae','#8a94a3',
              '#ffffff','#b268d4','#3f6b46','#3a536e','#d9b13b','#111111'];
 var chosen={c1:'#e6913c',c2:'#6b52ae'};
 var plannedNames=['',''];   // original fixture names, for sub tracking
-var M=null, activeFixture=null, tick=null;
+var M=null, activeFixture=null, tick=null, activeMatchReadyAt=null;
 
 function $(id){return document.getElementById(id);}
 function show(scr){
@@ -905,6 +904,7 @@ function buildQueueCard_(fx, seqNumber){
     card.appendChild(pl);
     var res=document.createElement('div');res.className='qresult';res.textContent=fixtureResultSummary_(fx);
     card.appendChild(res);
+    if(seqNumber){var pbadge=document.createElement('span');pbadge.className='seq-badge';pbadge.textContent='#'+seqNumber;card.appendChild(pbadge);}
     card.onclick=function(){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');};
     return card;
   }
@@ -930,23 +930,38 @@ function buildQueueCard_(fx, seqNumber){
   card.onclick=function(){switchToFixture_(fx);};
   return card;
 }
+// Numbering reflects the true order of play: already-played rubbers keep
+// whatever slot they'd have earned by when their players arrived (a proxy
+// for when they started, since match_log doesn't record a start time), the
+// match currently on court occupies the next slot, then still-to-play
+// rubbers that are already ready continue the count. Fixtures nobody has
+// arrived for yet are genuinely undecided, so they carry no number.
 function renderQueueBar_(){
   var host=$('queueBar');if(!host)return;
   var related=relatedFixtures_();
   if(!related.length){host.classList.remove('show');host.innerHTML='';return;}
-  // Ready (soonest-ready first) -> pending -> played, so the most actionable
-  // "who's up next" info is leftmost and finished rubbers sit out of the way.
-  var ready=[],pending=[],played=[];
+  var dated=[],pending=[];
   related.forEach(function(fx){
-    if(fx.status==='Played'){played.push(fx);return;}
+    if(fx.status==='Played'){
+      var rp=fixtureReadiness_(fx);
+      dated.push({fx:fx, key:rp.readyAt||fx.scheduled||''});
+      return;
+    }
     var r=fixtureReadiness_(fx);
-    if(r.ready)ready.push({fx:fx,readyAt:r.readyAt});else pending.push(fx);
+    if(r.ready)dated.push({fx:fx, key:r.readyAt});else pending.push(fx);
   });
-  ready.sort(function(a,b){return new Date(a.readyAt)-new Date(b.readyAt);});
+  var curReady=activeFixture?fixtureReadiness_(activeFixture):{ready:false};
+  var curKey=curReady.readyAt||activeMatchReadyAt||new Date().toISOString();
+  dated.push({fx:null, key:curKey, isCurrent:true});
+  dated.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
   host.innerHTML='';
-  ready.forEach(function(x,i){host.appendChild(buildQueueCard_(x.fx,i+2));});
+  var seq=0;
+  dated.forEach(function(d){
+    seq++;
+    if(d.isCurrent)return;
+    host.appendChild(buildQueueCard_(d.fx,seq));
+  });
   pending.forEach(function(fx){host.appendChild(buildQueueCard_(fx));});
-  played.forEach(function(fx){host.appendChild(buildQueueCard_(fx));});
   host.classList.add('show');
 }
 // Tapping a queue card leaves the current match (with the same "unsaved
@@ -1142,6 +1157,7 @@ $('start').onclick=function(){
   };
   if(!activeFixture){alert('Select a fixture before starting a competition match.');return;}
   if(!n[0]||!n[1]||n[0]===n[1]){alert('Select two different players.');return;}
+  activeMatchReadyAt=new Date().toISOString();
   lastGames=0;
   M=createMatch(cfg);
   M.matchId=makeMatchId();
@@ -1428,6 +1444,10 @@ $('save').onclick=function(){
   store.del(queueKey(p.matchId));pendingPayload=null;
   banner('saveBanner','ok',r&&r.duplicate?'Result already saved and verified.':'Result saved.');
   $('save').textContent='Saved ✓';clearActive();
+  // Refresh right away so this fixture shows as Played immediately (in the
+  // fixture list and in any score-screen queue bar) rather than waiting on
+  // the next 30s background poll.
+  if(scriptConfigured())fetchFixtures().then(renderFixtures).catch(function(){});
  },function(err){
   p.queueError=err.msg||err.reason||'Connection failed';enqueue(p);pendingPayload=null;
   banner('saveBanner',err.reason==='server'||err.reason==='auth'?'err':'warn',err.msg||'Connection unavailable. Result stored on this device and will retry when online.');
