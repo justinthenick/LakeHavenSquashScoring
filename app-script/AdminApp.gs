@@ -1903,9 +1903,12 @@ function markPlayerArrived(fixtureId,playerId,venueId,date){
   if(!fixtureId||!playerId||!venueId||!date)throw new Error('Missing parameters');
   var dateStr=String(date).split('T')[0];
   var payload = {fixture_id:fixtureId,player_id:playerId,venue_id:venueId,date:dateStr,arrived_at:new Date().toISOString()};
-  Logger.log('Marking arrival: '+JSON.stringify(payload));
-  var result = sbUpsert_('player_arrivals', payload, undefined);
-  Logger.log('Arrival result: '+JSON.stringify(result));
+  // on_conflict must name the (date,fixture_id,player_id) unique constraint -
+  // without it, "merge-duplicates" only matches against the primary key (a
+  // fresh random id every call), so marking the same arrival twice (e.g. a
+  // client retry after a timeout that actually succeeded server-side) throws
+  // a 409 instead of harmlessly refreshing arrived_at.
+  var result = sbUpsert_('player_arrivals', payload, 'date,fixture_id,player_id');
   return result;
 }
 

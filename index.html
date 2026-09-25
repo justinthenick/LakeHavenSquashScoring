@@ -878,10 +878,11 @@ $('fxLine').onchange=applyFixtureFilter;
 $('fxReady').onchange=applyFixtureFilter;
 
 // Tap a player's name on a fixture card to toggle their arrival status.
-function toggleArrival_(fx, playerId, currentlyArrived, btn){
+function toggleArrival_(fx, playerId, currentlyArrived, btn, retryOnTimeout){
   if(!playerId){alert('This player is not linked to a player record yet.');return;}
   var date=$('fxDate').value||localDate();
   btn.disabled=true;
+  if(retryOnTimeout===undefined)retryOnTimeout=true;
   var call=currentlyArrived
     ? callApi({action:'clearArrival', fixtureId:fx.id, playerId:playerId, date:date})
     : callApi({action:'markArrival', fixtureId:fx.id, playerId:playerId, date:date});
@@ -890,6 +891,12 @@ function toggleArrival_(fx, playerId, currentlyArrived, btn){
     if(currentlyArrived) delete arrivalStatus[key]; else arrivalStatus[key]=new Date().toISOString();
     applyFixtureFilter();
   }).catch(function(err){
+    // markArrival/clearArrival are both idempotent server-side (upsert keyed
+    // on date+fixture+player; delete-if-exists), so a timeout can be safely
+    // retried once - the original call very likely already succeeded and a
+    // retry is a harmless no-op, rather than surfacing a scary error for
+    // what's actually just Apps Script's cold-start latency.
+    if(retryOnTimeout && err && err.reason==='timeout'){ toggleArrival_(fx,playerId,currentlyArrived,btn,false); return; }
     btn.disabled=false;
     alert('Could not update arrival: '+(err.msg||err.reason||'unknown error'));
   });
