@@ -212,9 +212,10 @@
     .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:19%}
     .panel .tapcue{font-size:15px}
     .footbar button{padding:14px;font-size:19px}
-    .clockbar{font-size:16px;gap:24px;padding:4px 12px 14px}
-    .clockbar b{font-size:21px}
-    .clockbar .gamesTally{padding-right:16px}
+    .clockbar{font-size:24px;gap:32px;padding:8px 12px 18px}
+    .clockbar b{font-size:36px}
+    .clockbar .gamesTally{padding-right:22px}
+    .clockbar .gamesTally b{font-size:36px}
   }
   @media (orientation:landscape) and (max-height:600px){
     .hname{display:block}
@@ -239,12 +240,12 @@
   .footbar{display:flex;gap:10px;padding:4px 10px calc(6px + var(--safe-bot))}
   .footbar button{flex:1;padding:12px;border-radius:16px;background:var(--card);
     border:1px solid var(--line);font-weight:800;font-size:15px}
-  .clockbar{flex:none;display:flex;align-items:center;justify-content:center;gap:16px;
-    padding:2px 12px 12px;color:var(--muted);font-weight:700;font-size:12px;line-height:1.2}
-  .clockbar b{color:var(--ink);font-size:15px;font-weight:900}
-  .clockbar .gamesTally{display:flex;gap:10px;color:var(--ink);padding-right:10px;border-right:1px solid var(--line)}
+  .clockbar{flex:none;display:flex;align-items:center;justify-content:center;gap:22px;
+    padding:6px 12px 14px;color:var(--muted);font-weight:800;font-size:18px;line-height:1.2}
+  .clockbar b{color:var(--ink);font-size:26px;font-weight:900}
+  .clockbar .gamesTally{display:flex;gap:14px;color:var(--ink);padding-right:16px;border-right:2px solid var(--line)}
   .clockbar .gamesTally .gt-l{white-space:nowrap}
-  .clockbar .gamesTally b{font-size:15px}
+  .clockbar .gamesTally b{font-size:26px}
 
   /* ---------- between-games overlay ---------- */
   .overlay{position:fixed;inset:0;background:rgba(15,22,30,.72);display:none;
@@ -338,12 +339,12 @@
     <span class="hname" id="hname1"></span>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
+  <div id="queueBar" class="queuebar"></div>
   <div class="clockbar tnum">
     <span class="gamesTally"><span class="gt-l">Game <b id="gameNo">1</b></span><span class="gt-l">Games <b id="gamesLine">0–0</b></span></span>
     <span>Game <b id="gameClock">00:00</b></span>
     <span>Match <b id="matchClock">00:00</b></span>
   </div>
-  <div id="queueBar" class="queuebar"></div>
   <div class="msgbar"><span id="msg" class="msg"></span></div>
   <div class="arena">
     <button class="panel" id="panel0">
@@ -716,6 +717,45 @@ function fixtureReadiness_(fx){
   return {ready:ready, readyAt:readyAt};
 }
 
+// Chronological queue position for one team-pairing on one date: played
+// fixtures keep the slot they earned by when their players arrived (a proxy
+// for when they actually started), ready-but-not-yet-played ones continue
+// the count from there. Not-yet-ready fixtures are genuinely undecided, so
+// they get no number.
+function teamQueueNumbers_(matches){
+  var dated=[];
+  matches.forEach(function(fx){
+    if(fx.status==='Played'){
+      var rp=fixtureReadiness_(fx);
+      dated.push({id:fx.id, key:rp.readyAt||fx.scheduled||''});
+      return;
+    }
+    var r=fixtureReadiness_(fx);
+    if(r.ready)dated.push({id:fx.id, key:r.readyAt});
+  });
+  dated.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
+  var numbers={};
+  dated.forEach(function(d,i){numbers[d.id]=i+1;});
+  return numbers;
+}
+// Builds {fixtureId: number} across every distinct team-pairing present in
+// `fixtures` (all assumed to share one date), so each fixture's own queue
+// position can be looked up without recomputing per card.
+function buildQueueNumberMap_(fixtures){
+  var groups={};
+  fixtures.forEach(function(f){
+    if(!f.team1||!f.team2||f.status==='Scratched')return;
+    var key=[f.team1,f.team2].sort().join('||');
+    (groups[key]=groups[key]||[]).push(f);
+  });
+  var map={};
+  Object.keys(groups).forEach(function(k){
+    var nums=teamQueueNumbers_(groups[k]);
+    Object.keys(nums).forEach(function(id){map[id]=nums[id];});
+  });
+  return map;
+}
+
 function applyFixtureFilter(){
   var date=$('fxDate').value||localDate();
   var onDate=allFixtures.filter(function(f){return String(f.scheduled||'')===date;});
@@ -736,18 +776,7 @@ function applyFixtureFilter(){
   var note='';
   if(allFixtures.length && !onDate.length) note='No fixtures on '+date+'. Pick another date above.';
 
-  // Arrival-order queue position, most useful with a Team filter set (each of
-  // that team's rubbers, numbered in the order they became ready to start).
-  function computeSeqMap(){
-    if(!team) return null;
-    var seqMap={};
-    var readyList=shown.map(function(f){return {id:f.id, r:fixtureReadiness_(f)};}).filter(function(x){return x.r.ready;});
-    readyList.sort(function(a,b){return new Date(a.r.readyAt)-new Date(b.r.readyAt);});
-    readyList.forEach(function(x,i){seqMap[x.id]=i+1;});
-    return seqMap;
-  }
-
-  drawFixtures(shown, note, computeSeqMap());
+  drawFixtures(shown, note, buildQueueNumberMap_(onDate));
 
   // Fetch arrival status in background (don't block fixture display), and
   // only redraw if it actually changed - a full rebuild every 30s poll is
@@ -765,7 +794,7 @@ function applyFixtureFilter(){
         }
         if(JSON.stringify(next)===JSON.stringify(arrivalStatus)) return;
         arrivalStatus = next;
-        drawFixtures(shown, note, computeSeqMap());
+        drawFixtures(shown, note, buildQueueNumberMap_(onDate));
       })
       .catch(function(err) {
         console.log('Failed to fetch arrival status:', err);
@@ -777,7 +806,7 @@ function applyFixtureFilter(){
         (result.playerIds||[]).forEach(function(id) { next[id] = true; });
         if(JSON.stringify(next)===JSON.stringify(unavailablePlayerIds)) return;
         unavailablePlayerIds = next;
-        drawFixtures(shown, note, computeSeqMap());
+        drawFixtures(shown, note, buildQueueNumberMap_(onDate));
       })
       .catch(function(err) {
         console.log('Failed to fetch planned unavailability:', err);
@@ -791,7 +820,7 @@ function applyFixtureFilter(){
         });
         if(JSON.stringify(next)===JSON.stringify(subNominations)) return;
         subNominations = next;
-        drawFixtures(shown, note, computeSeqMap());
+        drawFixtures(shown, note, buildQueueNumberMap_(onDate));
       })
       .catch(function(err) {
         console.log('Failed to fetch sub nominations:', err);
@@ -806,14 +835,6 @@ function drawFixtures(list,note,seqMap){
 
     var main=document.createElement('div');main.style.flex='1';main.style.minWidth='0';main.style.cursor='pointer';
     main.onclick=function(){if(['Played','Scratched','Needs review'].indexOf(fx.status)>=0){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');return;}applyFixture(fx);};
-
-    if(seqMap){
-      var seq=document.createElement('span');
-      var n=seqMap[fx.id];
-      seq.className='seq-badge'+(n?'':' nyr');
-      seq.textContent=n?('#'+n):'NYR';
-      main.appendChild(seq);
-    }
 
     var playersLine=document.createElement('div');
     var p1=buildPlayerPill_(fx,fx.player1Id,fx.player1||'?');
@@ -838,7 +859,9 @@ function drawFixtures(list,note,seqMap){
     if(meta){var m=document.createElement('small');m.textContent=meta;main.appendChild(m);}
 
     var statusLine=document.createElement('small');
-    statusLine.innerHTML='<b>'+esc(fx.status||'Not yet played')+'</b>'+(fx.result?' · '+esc(fx.result):'');
+    var queueNum=seqMap?seqMap[fx.id]:null;
+    var statusLabel=((fx.status||'Not yet played')==='Not yet played'&&queueNum)?('Queued at position #'+queueNum):(fx.status||'Not yet played');
+    statusLine.innerHTML='<b>'+esc(statusLabel)+'</b>'+(fx.result?' · '+esc(fx.result):'');
     main.appendChild(statusLine);
 
     if((fx.actualPlayers||[]).some(function(n,i){return n&&n!==fx['player'+(i+1)];})){
@@ -954,14 +977,20 @@ function renderQueueBar_(){
   var curKey=curReady.readyAt||activeMatchReadyAt||new Date().toISOString();
   dated.push({fx:null, key:curKey, isCurrent:true});
   dated.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
-  host.innerHTML='';
-  var seq=0;
+  // Numbering is chronological (played matches keep the slot they earned by
+  // when they were actually played), but layout is priority order: what's
+  // ready to play next is leftmost and easiest to act on, finished rubbers
+  // are anchored to the right out of the way, regardless of their number.
+  var seq=0,readyCards=[],playedCards=[];
   dated.forEach(function(d){
     seq++;
     if(d.isCurrent)return;
-    host.appendChild(buildQueueCard_(d.fx,seq));
+    (d.fx.status==='Played'?playedCards:readyCards).push(buildQueueCard_(d.fx,seq));
   });
+  host.innerHTML='';
+  readyCards.forEach(function(c){host.appendChild(c);});
   pending.forEach(function(fx){host.appendChild(buildQueueCard_(fx));});
+  playedCards.forEach(function(c){host.appendChild(c);});
   host.classList.add('show');
 }
 // Tapping a queue card leaves the current match (with the same "unsaved
