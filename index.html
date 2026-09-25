@@ -164,11 +164,13 @@
   .gaptie{text-align:left}
   .tiehead{font-size:20px;font-weight:900;text-align:center;margin:2px 0 10px;letter-spacing:.01em}
   .tielines{border:1px solid var(--line);border-radius:14px;overflow:hidden}
-  .tierow{display:grid;grid-template-columns:42px 1fr auto;gap:8px;align-items:center;
-    padding:9px 12px;border-bottom:1px solid var(--line);font-size:15px}
+  .tierow{display:grid;grid-template-columns:28px 32px 1fr auto;gap:6px;align-items:center;
+    padding:9px 10px;border-bottom:1px solid var(--line);font-size:15px}
   .tierow:last-child{border-bottom:none}
   .tierow .tl{font-weight:900;color:var(--muted)}
+  .tierow .tq{font-weight:800;color:#1c6b3d;font-size:13px;text-align:center}
   .tierow .tn{color:var(--muted)}
+  .tierow .tn .arrive-pill{font-size:13px;padding:1px 8px;margin:0 1px}
   .tierow .tw{font-weight:800}
   .tierow.me{background:rgba(90,130,240,.10);outline:2px solid rgba(90,130,240,.35);outline-offset:-2px}
   .tierow.a .tw{color:var(--p1t)} .tierow.b .tw{color:var(--p2t)}
@@ -184,7 +186,9 @@
     .gaprow.gaptot{font-size:24px}
     #gap .cta{font-size:22px;padding:20px}
     .tiehead{font-size:28px;margin:6px 0 14px}
-    .tierow{font-size:20px;padding:13px 18px;grid-template-columns:56px 1fr auto}
+    .tierow{font-size:20px;padding:13px 16px;grid-template-columns:38px 44px 1fr auto}
+    .tierow .tq{font-size:17px}
+    .tierow .tn .arrive-pill{font-size:17px;padding:2px 10px}
   }
   /* bind the score screen to the visible viewport (normal flow, page scroll locked in show())
      so the header stays below the browser bar and the screen can't be dragged/overscrolled */
@@ -385,7 +389,6 @@
     <div class="breakclock tnum">Break&nbsp; <span id="breakClock">00:00</span></div>
     <div id="gapSummary" class="gapsummary"></div>
     <div id="gapTie" class="gaptie"></div>
-    <div id="gapQueue"></div>
     <button class="cta" id="gapGo">Start next game</button>
     <button class="cta ghost" id="gapUndo">Undo last point</button>
   </div>
@@ -1013,18 +1016,6 @@ function renderQueueBar_(){
   fillQueueHost_(host,groups);
   host.classList.add('show');
 }
-// Same data, shown inside the between-games overlay (which otherwise covers
-// the score screen's queue bar entirely) so scorers can still see who's
-// arrived and what's up next during the break, and mark arrivals right here.
-function renderGapQueue_(){
-  var host=$('gapQueue');if(!host)return;
-  var groups=computeQueueGroups_();
-  if(!groups){host.innerHTML='';return;}
-  host.innerHTML='<div class="eyebrow" style="margin:14px 0 6px;text-align:left">Other fixtures (your teams)</div>';
-  var row=document.createElement('div');row.className='queuebar show';
-  fillQueueHost_(row,groups);
-  host.appendChild(row);
-}
 // Tapping a queue card leaves the current match (with the same "unsaved
 // progress" confirm as Exit) and loads the tapped fixture on the setup
 // screen, ready to start - deliberately not auto-starting, since scorer/ref
@@ -1044,7 +1035,7 @@ function switchToFixture_(fx){
 function refreshFixtureViews_(){
   if($('setup').classList.contains('active'))applyFixtureFilter();
   if($('score').classList.contains('active'))renderQueueBar_();
-  if($('gap').classList.contains('active'))renderGapQueue_();
+  if($('gap').classList.contains('active')&&lastTieData)renderTie(lastTieData);
 }
 function refreshQueueData_(){
   var related=relatedFixtures_();
@@ -1058,7 +1049,7 @@ function refreshQueueData_(){
     callApi({action:'subNominations', fixtureIds:JSON.stringify(ids)}).then(function(result){
       (result.data||[]).forEach(function(row){subNominations[row.fixture_id+':'+row.original_player_id]=row.sub_player_id;});
     })
-  ]).then(function(){renderQueueBar_();if($('gap').classList.contains('active'))renderGapQueue_();}).catch(function(){});
+  ]).then(function(){renderQueueBar_();if($('gap').classList.contains('active')&&lastTieData)renderTie(lastTieData);}).catch(function(){});
 }
 
 function loadFixtures(retryOnTimeout){
@@ -1372,43 +1363,95 @@ function openGap(){
   h+='<div class="gaprow gaptot"><span>Games</span><span class="tnum" style="color:var(--p1t)">'+gs[0]+'</span><span class="tnum" style="color:var(--p2t)">'+gs[1]+'</span><span class="tnum">'+fmtT(M.timing.matchSec)+'</span></div>';
   $('gapSummary').innerHTML=h;
   loadTie();
-  renderGapQueue_();
   paintTimers();
   $('gap').classList.add('active');
 }
+var lastTieData=null;
 function loadTie(retryOnTimeout){
   var el=$('gapTie'); if(!el)return;
   if(!activeFixture||!activeFixture.id||!scriptConfigured()){el.innerHTML='';return;}
   if(retryOnTimeout===undefined)retryOnTimeout=true;
   el.innerHTML='<div class="hint" style="margin-top:14px">Loading the rest of the match…</div>';
-  callApi({action:'tie',fixtureId:activeFixture.id}).then(renderTie).catch(function(err){
+  callApi({action:'tie',fixtureId:activeFixture.id}).then(function(d){lastTieData=d;renderTie(d);}).catch(function(err){
     // Same Apps Script cold-start pattern as elsewhere - a plain read, so a
     // silent retry is always safe.
     if(retryOnTimeout && err && err.reason==='timeout'){ loadTie(false); return; }
     el.innerHTML='';
   });
 }
+// Same played->current->ready numbering as the main queue bar, but computed
+// directly from the tie's own sibling lines (which already include the
+// current fixture, so no virtual placeholder is needed here).
+function tieQueueNumbers_(matches, currentId){
+  var played=[],ready=[];
+  matches.forEach(function(fx){
+    if(fx.id===currentId)return;
+    if(fx.status==='Played'){
+      var rp=fixtureReadiness_(fx);
+      played.push({id:fx.id,key:rp.readyAt||fx.scheduled||''});
+      return;
+    }
+    var r=fixtureReadiness_(fx);
+    if(r.ready)ready.push({id:fx.id,key:r.readyAt});
+  });
+  played.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
+  ready.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
+  var numbers={},n=0;
+  played.forEach(function(d){n++;numbers[d.id]=n;});
+  n++; numbers[currentId]=n;
+  ready.forEach(function(d){n++;numbers[d.id]=n;});
+  return numbers;
+}
 function renderTie(d){
   var el=$('gapTie'); if(!el)return;
-  if(!d||!d.ok||!d.lines){el.innerHTML='';return;}
-  var toWin=Math.floor(d.lines.length/2)+1;
-  var lead=d.wonA>d.wonB?esc(d.teamA):(d.wonB>d.wonA?esc(d.teamB):'level');
-  var h='<div class="tiehead"><span style="color:var(--p1t)">'+esc(d.teamA)+'</span> '+
-    '<b>'+d.wonA+'</b> – <b>'+d.wonB+'</b> <span style="color:var(--p2t)">'+esc(d.teamB)+'</span></div>';
-  h+='<div class="tielines">';
+  el.innerHTML='';
+  if(!d||!d.ok||!d.lines)return;
+  var head=document.createElement('div');head.className='tiehead';
+  head.innerHTML='<span style="color:var(--p1t)">'+esc(d.teamA)+'</span> '+
+    '<b>'+d.wonA+'</b> – <b>'+d.wonB+'</b> <span style="color:var(--p2t)">'+esc(d.teamB)+'</span>';
+  el.appendChild(head);
+
+  // Cross-reference each line against the already-loaded fixture list to get
+  // player ids (for arrival taps) and status/readiness (for the position
+  // number) - tieResults_ itself only returns names, not ids.
+  var siblingFx=d.lines.map(function(l){return allFixtures.filter(function(f){return f.id===l.fixtureId;})[0];}).filter(Boolean);
+  var numbers=siblingFx.length?tieQueueNumbers_(siblingFx,activeFixture.id):{};
+
+  var wrap=document.createElement('div');wrap.className='tielines';
   d.lines.forEach(function(l){
     var me=l.fixtureId===activeFixture.id;
+    var fx=siblingFx.filter(function(f){return f.id===l.fixtureId;})[0];
+    var num=numbers[l.fixtureId];
+    var row=document.createElement('div');
+    row.className='tierow'+(me?' me':'')+(l.played?(l.winnerTeam==='A'?' a':' b'):'');
+
+    var lline=document.createElement('span');lline.className='tl';lline.textContent='L'+l.line;
+    row.appendChild(lline);
+
+    var qspan=document.createElement('span');qspan.className='tq';qspan.textContent=num?('#'+num):'';
+    row.appendChild(qspan);
+
+    var namesSpan=document.createElement('span');namesSpan.className='tn';
     var nm=pairShort(l.p1||'', l.p2||'');
-    var right = l.played
-      ? '<span class="tw">'+esc((l.winnerName||'').split(' ')[0])+' '+l.games+'</span>'
-      : '<span class="tp">'+(me?'this rubber':'to play')+'</span>';
-    h+='<div class="tierow'+(me?' me':'')+(l.played?(l.winnerTeam==='A'?' a':' b'):'')+'">'+
-       '<span class="tl">L'+l.line+'</span>'+
-       '<span class="tn">'+esc(nm[0])+' v '+esc(nm[1])+'</span>'+
-       right+'</div>';
+    if(fx&&!me&&!l.played){
+      var p1=buildPlayerPill_(fx,fx.player1Id,nm[0]);
+      var p2=buildPlayerPill_(fx,fx.player2Id,nm[1]);
+      namesSpan.appendChild(p1.btn);
+      namesSpan.appendChild(document.createTextNode(' v '));
+      namesSpan.appendChild(p2.btn);
+    } else {
+      namesSpan.textContent=nm[0]+' v '+nm[1];
+    }
+    row.appendChild(namesSpan);
+
+    var right=document.createElement('span');
+    if(l.played){right.className='tw';right.textContent=(l.winnerName||'').split(' ')[0]+' '+l.games;}
+    else{right.className='tp';right.textContent=me?'this rubber':'to play';}
+    row.appendChild(right);
+
+    wrap.appendChild(row);
   });
-  h+='</div>';
-  el.innerHTML=h;
+  el.appendChild(wrap);
 }
 $('gapUndo').onclick=function(){undo(M);$('gap').classList.remove('active');lastGames=M.games.length;renderScore();};
 
