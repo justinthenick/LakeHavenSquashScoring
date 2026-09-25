@@ -96,16 +96,16 @@
   .hname{display:none;font-weight:800;font-size:15px;max-width:24vw;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .exit{color:var(--danger);font-weight:800;font-size:15px;padding:6px 8px}
-  .queuebar{display:none;gap:8px;overflow-x:auto;padding:0 12px 8px;flex:none;-webkit-overflow-scrolling:touch}
+  .queuebar{display:none;gap:6px;overflow-x:auto;padding:0 10px 6px;flex:none;-webkit-overflow-scrolling:touch}
   .queuebar.show{display:flex}
-  .qcard{flex:none;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px 12px;
-    min-width:150px;max-width:220px;cursor:pointer;font-weight:700;font-size:13px;color:var(--ink)}
+  .qcard{flex:1 1 100px;min-width:88px;max-width:170px;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:6px 8px;cursor:pointer;font-weight:700;font-size:12px;color:var(--ink)}
   .qcard.ready{border-color:#238755;border-width:2px}
-  .qcard .qline{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:800}
-  .qcard .qplayers{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
-  .qcard .arrive-pill{font-size:12px;padding:1px 8px}
-  .qnext{display:inline-block;margin-top:6px;background:var(--ink);color:#fff;border-radius:999px;
-    padding:2px 10px;font-size:11px;font-weight:800}
+  .qcard.played{background:var(--card);cursor:default}
+  .qcard .qline{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;font-weight:800}
+  .qcard .qplayers{display:flex;flex-direction:column;gap:2px;align-items:stretch}
+  .qcard .arrive-pill{display:block;width:100%;text-align:center;white-space:normal;font-size:11px;padding:1px 6px}
+  .qcard .qresult{margin-top:4px;font-size:11px;color:var(--muted);font-weight:800;line-height:1.25}
   .arena{flex:1;display:flex;gap:10px;padding:6px 10px 8px;min-height:0}
   .panel{flex:1;border-radius:22px;position:relative;display:flex;flex-direction:column;
     align-items:stretch;color:#fff;overflow:hidden;padding:12px 12px 8px;
@@ -195,11 +195,12 @@
     .scorehead .game{font-size:24px}
     .exit{font-size:21px}
     .hname{font-size:22px;max-width:22vw}
-    .queuebar{padding:0 22px 12px;gap:12px}
-    .qcard{min-width:210px;max-width:280px;padding:12px 16px;font-size:16px;border-radius:16px}
-    .qcard .qline{font-size:13px}
-    .qcard .arrive-pill{font-size:15px;padding:2px 10px}
-    .qnext{font-size:13px;padding:3px 12px;margin-top:8px}
+    .queuebar{padding:0 18px 10px;gap:10px}
+    .qcard{flex:1 1 140px;min-width:130px;max-width:220px;padding:10px 12px;font-size:15px;border-radius:14px}
+    .qcard .qline{font-size:12px}
+    .qcard .arrive-pill{font-size:14px;padding:2px 8px}
+    .qcard .qresult{font-size:13px}
+    .seq-badge{font-size:13px;padding:2px 10px}
     .msgbar{height:88px}
     .msg{font-size:30px;padding:16px 40px;border-radius:999px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
     .panel .pname{font-size:26px}
@@ -210,9 +211,10 @@
     .panel .pts{font-size:min(38vh,34vw,420px)}
     .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:19%}
     .panel .tapcue{font-size:15px}
-    .footbar button{padding:20px;font-size:20px}
-    .footbar .clocks{font-size:16px}
-    .footbar .clocks b{font-size:20px}
+    .footbar button{padding:14px;font-size:19px}
+    .clockbar{font-size:16px;gap:24px;padding:4px 12px 6px}
+    .clockbar b{font-size:21px}
+    .clockbar .gamesTally{padding-right:16px}
   }
   @media (orientation:landscape) and (max-height:600px){
     .hname{display:block}
@@ -230,19 +232,19 @@
     .arena{gap:8px;padding:2px 8px 4px}
     .footbar{padding:4px 8px calc(4px + var(--safe-bot))}
     .footbar button{padding:8px;font-size:13px;border-radius:12px}
-    .footbar .clocks{font-size:11px}
-    .footbar .clocks b{font-size:13px}
+    .clockbar{font-size:11px;gap:10px;padding:1px 8px}
+    .clockbar b{font-size:13px}
+    .clockbar .gamesTally{padding-right:8px}
   }
-  .footbar{display:flex;gap:10px;padding:6px 10px calc(10px + var(--safe-bot))}
-  .footbar button{flex:1;padding:16px;border-radius:16px;background:var(--card);
-    border:1px solid var(--line);font-weight:800;font-size:16px}
-  .footbar .clocks{flex:1.2;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:2px;color:var(--muted);font-weight:700;font-size:13px;line-height:1.2}
-  .footbar .clocks b{color:var(--ink);font-size:16px;font-weight:900}
-  .footbar .clocks .gamesTally{display:flex;flex-direction:column;align-items:center;line-height:1.2;
-    color:var(--ink);border-bottom:1px solid var(--line);padding-bottom:3px;margin-bottom:2px}
-  .footbar .clocks .gamesTally .gt-l{white-space:nowrap}
-  .footbar .clocks .gamesTally b{font-size:18px}
+  .footbar{display:flex;gap:10px;padding:4px 10px calc(6px + var(--safe-bot))}
+  .footbar button{flex:1;padding:12px;border-radius:16px;background:var(--card);
+    border:1px solid var(--line);font-weight:800;font-size:15px}
+  .clockbar{flex:none;display:flex;align-items:center;justify-content:center;gap:16px;
+    padding:2px 12px 4px;color:var(--muted);font-weight:700;font-size:12px;line-height:1.2}
+  .clockbar b{color:var(--ink);font-size:15px;font-weight:900}
+  .clockbar .gamesTally{display:flex;gap:10px;color:var(--ink);padding-right:10px;border-right:1px solid var(--line)}
+  .clockbar .gamesTally .gt-l{white-space:nowrap}
+  .clockbar .gamesTally b{font-size:15px}
 
   /* ---------- between-games overlay ---------- */
   .overlay{position:fixed;inset:0;background:rgba(15,22,30,.72);display:none;
@@ -337,6 +339,11 @@
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
   <div class="abandonRow"><button id="abandonBtn" class="linklike">Match abandoned — nominate winner</button></div>
+  <div class="clockbar tnum">
+    <span class="gamesTally"><span class="gt-l">Game <b id="gameNo">1</b></span><span class="gt-l">Games <b id="gamesLine">0–0</b></span></span>
+    <span>Game <b id="gameClock">00:00</b></span>
+    <span>Match <b id="matchClock">00:00</b></span>
+  </div>
   <div id="queueBar" class="queuebar"></div>
   <div class="msgbar"><span id="msg" class="msg"></span></div>
   <div class="arena">
@@ -357,11 +364,6 @@
   </div>
   <div class="footbar">
     <button id="undo">↶ Undo</button>
-    <div class="clocks tnum">
-      <span class="gamesTally"><span class="gt-l">Game <b id="gameNo">1</b></span><span class="gt-l">Games <b id="gamesLine">0–0</b></span></span>
-      <span>Game <b id="gameClock">00:00</b></span>
-      <span>Match <b id="matchClock">00:00</b></span>
-    </div>
     <button id="flip">Change server ⇄</button>
   </div>
   <div class="overlay" id="histDrawer">
@@ -878,18 +880,40 @@ function relatedFixtures_(){
     if(String(f.scheduled||'')!==String(activeFixture.scheduled||''))return false;
     var sameTeams=(f.team1===activeFixture.team1&&f.team2===activeFixture.team2)||(f.team1===activeFixture.team2&&f.team2===activeFixture.team1);
     if(!sameTeams)return false;
-    if(['Played','Scratched'].indexOf(f.status)>=0)return false;
+    if(f.status==='Scratched')return false;
     return true;
   });
 }
-function buildQueueCard_(fx){
+function fixtureResultSummary_(fx){
+  if(fx.gamesP1==null||fx.gamesP2==null)return fx.result||'';
+  var names=(fx.actualPlayers&&fx.actualPlayers[0])?fx.actualPlayers:[fx.player1,fx.player2];
+  var winner=fx.gamesP1>fx.gamesP2?names[0]:names[1];
+  return 'Won by '+(winner||'?')+' '+fx.gamesP1+'-'+fx.gamesP2;
+}
+// seqNumber is only set for "ready" fixtures (both current players arrived),
+// numbered in arrival order starting at 2 - the match on court right now is
+// implicitly "1". Played fixtures show their result instead of arrival pills.
+function buildQueueCard_(fx, seqNumber){
   var card=document.createElement('div');card.className='qcard';
   var line=document.createElement('div');line.className='qline';line.textContent='Line '+(fx.line||'?');
   card.appendChild(line);
+
+  if(fx.status==='Played'){
+    card.classList.add('played');
+    var names=(fx.actualPlayers&&fx.actualPlayers[0])?fx.actualPlayers:[fx.player1,fx.player2];
+    var pl=document.createElement('div');pl.className='qplayers';pl.textContent=(names[0]||'?')+' vs '+(names[1]||'?');
+    card.appendChild(pl);
+    var res=document.createElement('div');res.className='qresult';res.textContent=fixtureResultSummary_(fx);
+    card.appendChild(res);
+    card.onclick=function(){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');};
+    return card;
+  }
+
   var players=document.createElement('div');players.className='qplayers';
   var p1=buildPlayerPill_(fx,fx.player1Id,fx.player1||'?');
   var p2=buildPlayerPill_(fx,fx.player2Id,fx.player2||'?');
-  players.appendChild(p1.btn);players.appendChild(document.createTextNode(' vs '));players.appendChild(p2.btn);
+  players.appendChild(p1.btn);
+  players.appendChild(p2.btn);
   card.appendChild(players);
   [p1,p2].forEach(function(p){
     if(!p.subId)return;
@@ -898,9 +922,9 @@ function buildQueueCard_(fx){
     link.onclick=function(e){e.stopPropagation();openSubPicker_(fx,p.playerId,p.playerName,true);};
     card.appendChild(link);
   });
-  if(fixtureReadiness_(fx).ready){
+  if(seqNumber){
     card.classList.add('ready');
-    var badge=document.createElement('span');badge.className='qnext';badge.textContent='▶ Next to play';
+    var badge=document.createElement('span');badge.className='seq-badge';badge.textContent='#'+seqNumber;
     card.appendChild(badge);
   }
   card.onclick=function(){switchToFixture_(fx);};
@@ -910,8 +934,19 @@ function renderQueueBar_(){
   var host=$('queueBar');if(!host)return;
   var related=relatedFixtures_();
   if(!related.length){host.classList.remove('show');host.innerHTML='';return;}
+  // Ready (soonest-ready first) -> pending -> played, so the most actionable
+  // "who's up next" info is leftmost and finished rubbers sit out of the way.
+  var ready=[],pending=[],played=[];
+  related.forEach(function(fx){
+    if(fx.status==='Played'){played.push(fx);return;}
+    var r=fixtureReadiness_(fx);
+    if(r.ready)ready.push({fx:fx,readyAt:r.readyAt});else pending.push(fx);
+  });
+  ready.sort(function(a,b){return new Date(a.readyAt)-new Date(b.readyAt);});
   host.innerHTML='';
-  related.forEach(function(fx){host.appendChild(buildQueueCard_(fx));});
+  ready.forEach(function(x,i){host.appendChild(buildQueueCard_(x.fx,i+2));});
+  pending.forEach(function(fx){host.appendChild(buildQueueCard_(fx));});
+  played.forEach(function(fx){host.appendChild(buildQueueCard_(fx));});
   host.classList.add('show');
 }
 // Tapping a queue card leaves the current match (with the same "unsaved

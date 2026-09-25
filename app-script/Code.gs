@@ -98,6 +98,7 @@ function readFixtures_() {
     }
     return {
       status:statuses[f.fixture_id].status,result:statuses[f.fixture_id].result,actualPlayers:statuses[f.fixture_id].actualNames||[playerNames[statuses[f.fixture_id].actual1Id]||'',playerNames[statuses[f.fixture_id].actual2Id]||''],
+      gamesP1:statuses[f.fixture_id].gamesP1,gamesP2:statuses[f.fixture_id].gamesP2,
       id: f.fixture_id, player1Id:f.player1_id, player2Id:f.player2_id,
       pointsToWin:(rules[f.comp_ref]||{}).points_per_game||15,winByTwo:!!(rules[f.comp_ref]||{}).win_by_two,bestOf:(rules[f.comp_ref]||{}).best_of||5,
       player1: playerNames[f.player1_id] || '', player2: playerNames[f.player2_id] || '',
@@ -373,6 +374,6 @@ function fixtureStatuses_(fixtures){
  var byId={};logs.forEach(function(m){byId[m.fixture_id]=m;});
  var cache=CacheService.getScriptCache(),cached={};for(var i=0;i<fixtures.length;i+=100){var part=cache.getAll(fixtures.slice(i,i+100).map(function(f){return 'progress:'+f.fixture_id;}));Object.keys(part).forEach(function(k){cached[k]=part[k];});}
  var out={};fixtures.forEach(function(f){var m=byId[f.fixture_id],p=cached['progress:'+f.fixture_id];p=p?JSON.parse(p):null;
-  out[f.fixture_id]=m?{status:/scratched/i.test(m.score_line||'')?'Scratched':'Played',result:m.score_line||m.games_p1+'–'+m.games_p2,actual1Id:m.player1_id,actual2Id:m.player2_id}:f.played?{status:'Needs review',result:'Played flag; result missing'}:p?{status:'Underway',result:p.games.join('–')+' games · '+p.points.join('–')+' points',actualNames:p.players,updated:p.updated}:{status:'Not yet played',result:''};
+  out[f.fixture_id]=m?{status:/scratched/i.test(m.score_line||'')?'Scratched':'Played',result:m.score_line||m.games_p1+'–'+m.games_p2,actual1Id:m.player1_id,actual2Id:m.player2_id,gamesP1:m.games_p1,gamesP2:m.games_p2}:f.played?{status:'Needs review',result:'Played flag; result missing'}:p?{status:'Underway',result:p.games.join('–')+' games · '+p.points.join('–')+' points',actualNames:p.players,updated:p.updated}:{status:'Not yet played',result:''};
  });return out;
 }
