@@ -99,7 +99,7 @@
   .queuebar{display:none;gap:6px;overflow-x:auto;padding:0 10px 6px;flex:none;-webkit-overflow-scrolling:touch}
   .queuebar.show{display:flex}
   .qcard{flex:1 1 100px;min-width:88px;max-width:170px;background:#fff;border:1px solid var(--line);
-    border-radius:12px;padding:6px 8px;cursor:pointer;font-weight:700;font-size:12px;color:var(--ink)}
+    border-radius:12px;padding:6px 8px;cursor:pointer;font-weight:700;font-size:12px;color:var(--ink);text-align:left}
   .qcard.ready{border-color:#238755;border-width:2px}
   .qcard.played{background:var(--card);cursor:default}
   .qcard .qline{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;font-weight:800}
@@ -385,6 +385,7 @@
     <div class="breakclock tnum">Break&nbsp; <span id="breakClock">00:00</span></div>
     <div id="gapSummary" class="gapsummary"></div>
     <div id="gapTie" class="gaptie"></div>
+    <div id="gapQueue"></div>
     <button class="cta" id="gapGo">Start next game</button>
     <button class="cta ghost" id="gapUndo">Undo last point</button>
   </div>
@@ -971,15 +972,16 @@ function buildQueueCard_(fx, seqNumber){
 // match currently on court occupies the next slot, then still-to-play
 // rubbers that are already ready continue the count. Fixtures nobody has
 // arrived for yet are genuinely undecided, so they carry no number.
-function renderQueueBar_(){
-  var host=$('queueBar');if(!host)return;
+// The match on court always claims the slot right after whatever's already
+// been played, regardless of when other (not-yet-started) fixtures' players
+// happened to arrive - comparing raw timestamps against a match that hasn't
+// started yet isn't meaningful, so numbering is played (sorted) -> current
+// (fixed) -> ready-not-played (sorted), not one merged timestamp sort.
+// Returns null when there's nothing to show. Shared by the score-screen
+// queue bar and the between-games overlay so both stay consistent.
+function computeQueueGroups_(){
   var related=relatedFixtures_();
-  if(!related.length){host.classList.remove('show');host.innerHTML='';return;}
-  // The match on court always claims the slot right after whatever's already
-  // been played, regardless of when other (not-yet-started) fixtures' players
-  // happened to arrive - comparing raw timestamps against a match that hasn't
-  // started yet isn't meaningful, so numbering is played (sorted) -> current
-  // (fixed) -> ready-not-played (sorted), not one merged timestamp sort.
+  if(!related.length)return null;
   var played=[],ready=[],pending=[];
   related.forEach(function(fx){
     if(fx.status==='Played'){
@@ -993,14 +995,35 @@ function renderQueueBar_(){
   played.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
   ready.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
   var seq=0;
-  var playedCards=played.map(function(x){seq++;return buildQueueCard_(x.fx,seq);});
+  var playedNumbered=played.map(function(x){seq++;return {fx:x.fx,num:seq};});
   seq++; // the current match's slot
-  var readyCards=ready.map(function(x){seq++;return buildQueueCard_(x.fx,seq);});
+  var readyNumbered=ready.map(function(x){seq++;return {fx:x.fx,num:seq};});
+  return {ready:readyNumbered, pending:pending, played:playedNumbered};
+}
+function fillQueueHost_(host,groups){
   host.innerHTML='';
-  readyCards.forEach(function(c){host.appendChild(c);});
-  pending.forEach(function(fx){host.appendChild(buildQueueCard_(fx));});
-  playedCards.forEach(function(c){host.appendChild(c);});
+  groups.ready.forEach(function(x){host.appendChild(buildQueueCard_(x.fx,x.num));});
+  groups.pending.forEach(function(fx){host.appendChild(buildQueueCard_(fx));});
+  groups.played.forEach(function(x){host.appendChild(buildQueueCard_(x.fx,x.num));});
+}
+function renderQueueBar_(){
+  var host=$('queueBar');if(!host)return;
+  var groups=computeQueueGroups_();
+  if(!groups){host.classList.remove('show');host.innerHTML='';return;}
+  fillQueueHost_(host,groups);
   host.classList.add('show');
+}
+// Same data, shown inside the between-games overlay (which otherwise covers
+// the score screen's queue bar entirely) so scorers can still see who's
+// arrived and what's up next during the break, and mark arrivals right here.
+function renderGapQueue_(){
+  var host=$('gapQueue');if(!host)return;
+  var groups=computeQueueGroups_();
+  if(!groups){host.innerHTML='';return;}
+  host.innerHTML='<div class="eyebrow" style="margin:14px 0 6px;text-align:left">Other fixtures (your teams)</div>';
+  var row=document.createElement('div');row.className='queuebar show';
+  fillQueueHost_(row,groups);
+  host.appendChild(row);
 }
 // Tapping a queue card leaves the current match (with the same "unsaved
 // progress" confirm as Exit) and loads the tapped fixture on the setup
@@ -1021,6 +1044,7 @@ function switchToFixture_(fx){
 function refreshFixtureViews_(){
   if($('setup').classList.contains('active'))applyFixtureFilter();
   if($('score').classList.contains('active'))renderQueueBar_();
+  if($('gap').classList.contains('active'))renderGapQueue_();
 }
 function refreshQueueData_(){
   var related=relatedFixtures_();
@@ -1034,7 +1058,7 @@ function refreshQueueData_(){
     callApi({action:'subNominations', fixtureIds:JSON.stringify(ids)}).then(function(result){
       (result.data||[]).forEach(function(row){subNominations[row.fixture_id+':'+row.original_player_id]=row.sub_player_id;});
     })
-  ]).then(renderQueueBar_).catch(function(){});
+  ]).then(function(){renderQueueBar_();if($('gap').classList.contains('active'))renderGapQueue_();}).catch(function(){});
 }
 
 function loadFixtures(retryOnTimeout){
@@ -1348,6 +1372,7 @@ function openGap(){
   h+='<div class="gaprow gaptot"><span>Games</span><span class="tnum" style="color:var(--p1t)">'+gs[0]+'</span><span class="tnum" style="color:var(--p2t)">'+gs[1]+'</span><span class="tnum">'+fmtT(M.timing.matchSec)+'</span></div>';
   $('gapSummary').innerHTML=h;
   loadTie();
+  renderGapQueue_();
   paintTimers();
   $('gap').classList.add('active');
 }
