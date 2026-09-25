@@ -815,16 +815,22 @@ function applyFixture(fx){
 }
 function banner(id,kind,msg){var el=$(id);if(!msg){el.innerHTML='';return;}el.innerHTML='<div class="banner '+kind+'">'+esc(msg)+'</div>';}
 
-function loadFixtures(){
+function loadFixtures(retryOnTimeout){
   var host=$('fixtures');host.innerHTML='<div class="hint">Looking for fixtures…</div>';
   if(!scriptConfigured()||!CONFIG.SHARED_SECRET){host.innerHTML='<div class="hint">Enter the private club access code to load fixtures. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Enter club code</button></div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
+  if(retryOnTimeout===undefined)retryOnTimeout=true;
   fetchFixtures().then(renderFixtures).catch(function(err){
+    // Apps Script's first request after being idle spins up a fresh execution
+    // environment and can be much slower than normal - silently retry once
+    // before showing an error, rather than making a cold start look like a
+    // broken deployment.
+    if(retryOnTimeout && err && err.reason==='timeout'){ loadFixtures(false); return; }
     var m=err.msg||err.reason||'offline';
-    var hint=(m==='timeout'||m==='network')?' This usually means the URL isn\u2019t the deployed <b>/exec</b> web app (the <b>/dev</b> URL won\u2019t work here), or the deployment\u2019s access isn\u2019t set to <b>Anyone</b>.':'';
-    host.innerHTML='<div class="hint">Couldn\u2019t load fixtures ('+esc(m)+').'+hint+' Use <b>Access settings</b> below to check the URL &amp; secret, or enter players manually.</div>';
+    var hint=(m==='timeout'||m==='network')?' This usually means the URL isn’t the deployed <b>/exec</b> web app (the <b>/dev</b> URL won’t work here), or the deployment’s access isn’t set to <b>Anyone</b>.':'';
+    host.innerHTML='<div class="hint">Couldn’t load fixtures ('+esc(m)+').'+hint+' Use <b>Access settings</b> below to check the URL &amp; secret, or enter players manually.</div>';
   });
 }
-$('reloadFx').onclick=loadFixtures;
+$('reloadFx').onclick=function(){loadFixtures();};
 $('hidePlayed').onchange=applyFixtureFilter;
 $('fxSearch').oninput=applyFixtureFilter;
 $('fxDate').onchange=applyFixtureFilter;
