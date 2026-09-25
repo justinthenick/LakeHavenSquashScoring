@@ -589,7 +589,7 @@ var PALETTE=['#e6913c','#5aa1e0','#e58ca0','#79c4ac','#6b52ae','#8a94a3',
              '#ffffff','#b268d4','#3f6b46','#3a536e','#d9b13b','#111111'];
 var chosen={c1:'#e6913c',c2:'#6b52ae'};
 var plannedNames=['',''];   // original fixture names, for sub tracking
-var M=null, activeFixture=null, tick=null, activeMatchReadyAt=null;
+var M=null, activeFixture=null, tick=null;
 
 function $(id){return document.getElementById(id);}
 function show(scr){
@@ -723,19 +723,25 @@ function fixtureReadiness_(fx){
 // the count from there. Not-yet-ready fixtures are genuinely undecided, so
 // they get no number.
 function teamQueueNumbers_(matches){
-  var dated=[];
+  var played=[],ready=[];
   matches.forEach(function(fx){
     if(fx.status==='Played'){
       var rp=fixtureReadiness_(fx);
-      dated.push({id:fx.id, key:rp.readyAt||fx.scheduled||''});
+      played.push({id:fx.id, key:rp.readyAt||fx.scheduled||''});
       return;
     }
     var r=fixtureReadiness_(fx);
-    if(r.ready)dated.push({id:fx.id, key:r.readyAt});
+    if(r.ready)ready.push({id:fx.id, key:r.readyAt});
   });
-  dated.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
-  var numbers={};
-  dated.forEach(function(d,i){numbers[d.id]=i+1;});
+  // Played fixtures always occupy the lowest numbers (sorted among
+  // themselves), then ready-not-played ones continue the count - a fixture
+  // that's merely ready shouldn't outrank one that's already been played,
+  // even if its players happened to arrive earlier in the evening.
+  played.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
+  ready.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
+  var numbers={},n=0;
+  played.forEach(function(d){n++;numbers[d.id]=n;});
+  ready.forEach(function(d){n++;numbers[d.id]=n;});
   return numbers;
 }
 // Builds {fixtureId: number} across every distinct team-pairing present in
@@ -923,7 +929,13 @@ function buildQueueCard_(fx, seqNumber){
   if(fx.status==='Played'){
     card.classList.add('played');
     var names=(fx.actualPlayers&&fx.actualPlayers[0])?fx.actualPlayers:[fx.player1,fx.player2];
-    var pl=document.createElement('div');pl.className='qplayers';pl.textContent=(names[0]||'?')+' vs '+(names[1]||'?');
+    var p1Tag='',p2Tag='';
+    if(fx.gamesP1!=null&&fx.gamesP2!=null){
+      p1Tag=fx.gamesP1>fx.gamesP2?' (W)':' (L)';
+      p2Tag=fx.gamesP2>fx.gamesP1?' (W)':' (L)';
+    }
+    var pl=document.createElement('div');pl.className='qplayers';
+    pl.textContent=(names[0]||'?')+p1Tag+' vs '+(names[1]||'?')+p2Tag;
     card.appendChild(pl);
     var res=document.createElement('div');res.className='qresult';res.textContent=fixtureResultSummary_(fx);
     card.appendChild(res);
@@ -963,30 +975,27 @@ function renderQueueBar_(){
   var host=$('queueBar');if(!host)return;
   var related=relatedFixtures_();
   if(!related.length){host.classList.remove('show');host.innerHTML='';return;}
-  var dated=[],pending=[];
+  // The match on court always claims the slot right after whatever's already
+  // been played, regardless of when other (not-yet-started) fixtures' players
+  // happened to arrive - comparing raw timestamps against a match that hasn't
+  // started yet isn't meaningful, so numbering is played (sorted) -> current
+  // (fixed) -> ready-not-played (sorted), not one merged timestamp sort.
+  var played=[],ready=[],pending=[];
   related.forEach(function(fx){
     if(fx.status==='Played'){
       var rp=fixtureReadiness_(fx);
-      dated.push({fx:fx, key:rp.readyAt||fx.scheduled||''});
+      played.push({fx:fx, key:rp.readyAt||fx.scheduled||''});
       return;
     }
     var r=fixtureReadiness_(fx);
-    if(r.ready)dated.push({fx:fx, key:r.readyAt});else pending.push(fx);
+    if(r.ready)ready.push({fx:fx, key:r.readyAt});else pending.push(fx);
   });
-  var curReady=activeFixture?fixtureReadiness_(activeFixture):{ready:false};
-  var curKey=curReady.readyAt||activeMatchReadyAt||new Date().toISOString();
-  dated.push({fx:null, key:curKey, isCurrent:true});
-  dated.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
-  // Numbering is chronological (played matches keep the slot they earned by
-  // when they were actually played), but layout is priority order: what's
-  // ready to play next is leftmost and easiest to act on, finished rubbers
-  // are anchored to the right out of the way, regardless of their number.
-  var seq=0,readyCards=[],playedCards=[];
-  dated.forEach(function(d){
-    seq++;
-    if(d.isCurrent)return;
-    (d.fx.status==='Played'?playedCards:readyCards).push(buildQueueCard_(d.fx,seq));
-  });
+  played.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
+  ready.sort(function(a,b){return new Date(a.key)-new Date(b.key);});
+  var seq=0;
+  var playedCards=played.map(function(x){seq++;return buildQueueCard_(x.fx,seq);});
+  seq++; // the current match's slot
+  var readyCards=ready.map(function(x){seq++;return buildQueueCard_(x.fx,seq);});
   host.innerHTML='';
   readyCards.forEach(function(c){host.appendChild(c);});
   pending.forEach(function(fx){host.appendChild(buildQueueCard_(fx));});
@@ -1186,7 +1195,6 @@ $('start').onclick=function(){
   };
   if(!activeFixture){alert('Select a fixture before starting a competition match.');return;}
   if(!n[0]||!n[1]||n[0]===n[1]){alert('Select two different players.');return;}
-  activeMatchReadyAt=new Date().toISOString();
   lastGames=0;
   M=createMatch(cfg);
   M.matchId=makeMatchId();
@@ -1343,11 +1351,17 @@ function openGap(){
   paintTimers();
   $('gap').classList.add('active');
 }
-function loadTie(){
+function loadTie(retryOnTimeout){
   var el=$('gapTie'); if(!el)return;
   if(!activeFixture||!activeFixture.id||!scriptConfigured()){el.innerHTML='';return;}
+  if(retryOnTimeout===undefined)retryOnTimeout=true;
   el.innerHTML='<div class="hint" style="margin-top:14px">Loading the rest of the match…</div>';
-  callApi({action:'tie',fixtureId:activeFixture.id}).then(renderTie).catch(function(){el.innerHTML='';});
+  callApi({action:'tie',fixtureId:activeFixture.id}).then(renderTie).catch(function(err){
+    // Same Apps Script cold-start pattern as elsewhere - a plain read, so a
+    // silent retry is always safe.
+    if(retryOnTimeout && err && err.reason==='timeout'){ loadTie(false); return; }
+    el.innerHTML='';
+  });
 }
 function renderTie(d){
   var el=$('gapTie'); if(!el)return;
