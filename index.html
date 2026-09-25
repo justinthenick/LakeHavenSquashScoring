@@ -80,6 +80,8 @@
   .arrive-pill.absent{background:#fff7e6;border:1px dashed #b45309;color:#92400e}
   .arrive-pill:disabled{opacity:0.5}
   .sub-link{display:block;background:none;border:none;color:#2563eb;font-weight:700;font-size:12px;padding:2px 0;text-decoration:underline;text-align:left}
+  .seq-badge{display:inline-block;min-width:22px;text-align:center;border-radius:12px;padding:1px 8px;font-size:12px;font-weight:800;margin-top:4px;background:#dff2e5;color:#1c6b3d}
+  .seq-badge.nyr{background:#f3f4f6;color:var(--muted)}
   .banner{font-size:13px;padding:10px 14px;border-radius:12px;margin-bottom:4px;font-weight:700}
   .banner.warn{background:#fff4d6;color:#7a5c00}
   .banner.err{background:#fbe1de;color:#8a231a}
@@ -270,6 +272,9 @@
     <div class="fxrow">
       <select id="fxTeam"><option value="">All teams</option></select>
       <select id="fxLine"><option value="">All lines</option><option value="1">Line 1</option><option value="2">Line 2</option><option value="3">Line 3</option><option value="4">Line 4</option><option value="5">Line 5</option></select>
+    </div>
+    <div class="fxrow">
+      <select id="fxReady"><option value="">All rubbers</option><option value="ready">Ready</option><option value="notready">Not ready</option></select>
     </div>
     <label style="display:block;margin:8px 0"><input id="hidePlayed" type="checkbox"> Hide played / scratched fixtures</label><input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
     <div class="hint" style="margin-bottom:6px">Tap a player's name on a fixture below to mark them as arrived.</div>
@@ -681,6 +686,18 @@ var arrivalStatus = {};
 var unavailablePlayerIds = {}; // playerId -> true, for the CURRENTLY selected date
 var subNominations = {}; // 'fixtureId:originalPlayerId' -> subPlayerId, for the currently shown fixtures
 
+// Current player id for a slot, accounting for a nominated sub, plus whether
+// that player has arrived and when - "ready" means both slots have arrived.
+function fixtureReadiness_(fx){
+  var p1Id=subNominations[fx.id+':'+fx.player1Id]||fx.player1Id;
+  var p2Id=subNominations[fx.id+':'+fx.player2Id]||fx.player2Id;
+  var p1At=p1Id?arrivalStatus[fx.id+':'+p1Id]:null;
+  var p2At=p2Id?arrivalStatus[fx.id+':'+p2Id]:null;
+  var ready=!!(p1At&&p2At);
+  var readyAt=ready?(new Date(p1At)>new Date(p2At)?p1At:p2At):null;
+  return {ready:ready, readyAt:readyAt};
+}
+
 function applyFixtureFilter(){
   var date=$('fxDate').value||localDate();
   var onDate=allFixtures.filter(function(f){return String(f.scheduled||'')===date;});
@@ -688,18 +705,31 @@ function applyFixtureFilter(){
   syncSelect('fxComp','All comps',uniqSorted(onDate.map(function(f){return f.comp;})));
   var teams=[];onDate.forEach(function(f){if(f.team1)teams.push(f.team1);if(f.team2)teams.push(f.team2);});
   syncSelect('fxTeam','All teams',uniqSorted(teams));
-  var comp=$('fxComp').value, team=$('fxTeam').value, line=$('fxLine').value, q=($('fxSearch').value||'').trim().toLowerCase();
+  var comp=$('fxComp').value, team=$('fxTeam').value, line=$('fxLine').value, ready=$('fxReady').value, q=($('fxSearch').value||'').trim().toLowerCase();
   var shown=onDate.filter(function(f){
     if($('hidePlayed').checked&&['Played','Scratched'].indexOf(f.status)>=0)return false;
     if(comp&&String(f.comp||'')!==comp)return false;
     if(team&&f.team1!==team&&f.team2!==team)return false;
     if(line&&String(f.line||'')!==String(line))return false;
     if(q&&(((f.player1||'')+' '+(f.player2||'')).toLowerCase().indexOf(q)<0))return false;
+    if(ready){var r=fixtureReadiness_(f).ready;if(ready==='ready'&&!r)return false;if(ready==='notready'&&r)return false;}
     return true;
   });
   var note='';
   if(allFixtures.length && !onDate.length) note='No fixtures on '+date+'. Pick another date above.';
-  drawFixtures(shown, note);
+
+  // Arrival-order queue position, most useful with a Team filter set (each of
+  // that team's rubbers, numbered in the order they became ready to start).
+  function computeSeqMap(){
+    if(!team) return null;
+    var seqMap={};
+    var readyList=shown.map(function(f){return {id:f.id, r:fixtureReadiness_(f)};}).filter(function(x){return x.r.ready;});
+    readyList.sort(function(a,b){return new Date(a.r.readyAt)-new Date(b.r.readyAt);});
+    readyList.forEach(function(x,i){seqMap[x.id]=i+1;});
+    return seqMap;
+  }
+
+  drawFixtures(shown, note, computeSeqMap());
 
   // Fetch arrival status in background (don't block fixture display), and
   // only redraw if it actually changed - a full rebuild every 30s poll is
@@ -717,7 +747,7 @@ function applyFixtureFilter(){
         }
         if(JSON.stringify(next)===JSON.stringify(arrivalStatus)) return;
         arrivalStatus = next;
-        drawFixtures(shown, note);
+        drawFixtures(shown, note, computeSeqMap());
       })
       .catch(function(err) {
         console.log('Failed to fetch arrival status:', err);
@@ -729,7 +759,7 @@ function applyFixtureFilter(){
         (result.playerIds||[]).forEach(function(id) { next[id] = true; });
         if(JSON.stringify(next)===JSON.stringify(unavailablePlayerIds)) return;
         unavailablePlayerIds = next;
-        drawFixtures(shown, note);
+        drawFixtures(shown, note, computeSeqMap());
       })
       .catch(function(err) {
         console.log('Failed to fetch planned unavailability:', err);
@@ -743,14 +773,14 @@ function applyFixtureFilter(){
         });
         if(JSON.stringify(next)===JSON.stringify(subNominations)) return;
         subNominations = next;
-        drawFixtures(shown, note);
+        drawFixtures(shown, note, computeSeqMap());
       })
       .catch(function(err) {
         console.log('Failed to fetch sub nominations:', err);
       });
   }
 }
-function drawFixtures(list,note){
+function drawFixtures(list,note,seqMap){
   var host=$('fixtures');host.innerHTML=note?('<div class="hint">'+esc(note)+'</div>'):'';
   if(!list.length){host.innerHTML+='<div class="hint">No matching fixtures.</div>';return;}
   list.forEach(function(fx){
@@ -758,6 +788,14 @@ function drawFixtures(list,note){
 
     var main=document.createElement('div');main.style.flex='1';main.style.minWidth='0';main.style.cursor='pointer';
     main.onclick=function(){if(['Played','Scratched','Needs review'].indexOf(fx.status)>=0){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');return;}applyFixture(fx);};
+
+    if(seqMap){
+      var seq=document.createElement('span');
+      var n=seqMap[fx.id];
+      seq.className='seq-badge'+(n?'':' nyr');
+      seq.textContent=n?('#'+n):'NYR';
+      main.appendChild(seq);
+    }
 
     var playersLine=document.createElement('div');
     var p1=buildPlayerPill_(fx,fx.player1Id,fx.player1||'?');
@@ -837,6 +875,7 @@ $('fxDate').onchange=applyFixtureFilter;
 $('fxComp').onchange=applyFixtureFilter;
 $('fxTeam').onchange=applyFixtureFilter;
 $('fxLine').onchange=applyFixtureFilter;
+$('fxReady').onchange=applyFixtureFilter;
 
 // Tap a player's name on a fixture card to toggle their arrival status.
 function toggleArrival_(fx, playerId, currentlyArrived, btn){
