@@ -96,6 +96,16 @@
   .hname{display:none;font-weight:800;font-size:15px;max-width:24vw;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .exit{color:var(--danger);font-weight:800;font-size:15px;padding:6px 8px}
+  .queuebar{display:none;gap:8px;overflow-x:auto;padding:0 12px 8px;flex:none;-webkit-overflow-scrolling:touch}
+  .queuebar.show{display:flex}
+  .qcard{flex:none;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px 12px;
+    min-width:150px;max-width:220px;cursor:pointer;font-weight:700;font-size:13px;color:var(--ink)}
+  .qcard.ready{border-color:#238755;border-width:2px}
+  .qcard .qline{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;font-weight:800}
+  .qcard .qplayers{display:flex;flex-wrap:wrap;align-items:center;gap:2px}
+  .qcard .arrive-pill{font-size:12px;padding:1px 8px}
+  .qnext{display:inline-block;margin-top:6px;background:var(--ink);color:#fff;border-radius:999px;
+    padding:2px 10px;font-size:11px;font-weight:800}
   .arena{flex:1;display:flex;gap:10px;padding:6px 10px 8px;min-height:0}
   .panel{flex:1;border-radius:22px;position:relative;display:flex;flex-direction:column;
     align-items:stretch;color:#fff;overflow:hidden;padding:12px 12px 8px;
@@ -105,7 +115,7 @@
     margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .serveslot{flex:none;height:54px;margin:4px 0;display:flex;align-items:center}
   .panel .pts{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;
-    font-weight:900;line-height:.9;letter-spacing:-.04em;font-size:min(30vh,40vw,180px)}
+    font-weight:900;line-height:.9;letter-spacing:-.04em;font-size:min(26vh,40vw,180px)}
   .panel .tapcue{flex:none;text-align:center;font-size:12px;font-weight:800;
     letter-spacing:.12em;text-transform:uppercase;opacity:.72}
   .gameball{display:none;position:absolute;top:20%;left:50%;transform:translateX(-50%);z-index:3;
@@ -185,6 +195,11 @@
     .scorehead .game{font-size:24px}
     .exit{font-size:21px}
     .hname{font-size:22px;max-width:22vw}
+    .queuebar{padding:0 22px 12px;gap:12px}
+    .qcard{min-width:210px;max-width:280px;padding:12px 16px;font-size:16px;border-radius:16px}
+    .qcard .qline{font-size:13px}
+    .qcard .arrive-pill{font-size:15px;padding:2px 10px}
+    .qnext{font-size:13px;padding:3px 12px;margin-top:8px}
     .msgbar{height:88px}
     .msg{font-size:30px;padding:16px 40px;border-radius:999px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
     .panel .pname{font-size:26px}
@@ -192,7 +207,7 @@
     .serve{width:78px;height:78px;font-size:34px;border-radius:18px}
     .serve small{font-size:12px;bottom:7px}
     .serve::after{font-size:15px;top:4px;right:8px}
-    .panel .pts{font-size:min(46vh,34vw,420px)}
+    .panel .pts{font-size:min(38vh,34vw,420px)}
     .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:19%}
     .panel .tapcue{font-size:15px}
     .footbar button{padding:20px;font-size:20px}
@@ -321,6 +336,8 @@
     <span class="hname" id="hname1"></span>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
+  <div class="abandonRow"><button id="abandonBtn" class="linklike">Match abandoned — nominate winner</button></div>
+  <div id="queueBar" class="queuebar"></div>
   <div class="msgbar"><span id="msg" class="msg"></span></div>
   <div class="arena">
     <button class="panel" id="panel0">
@@ -347,7 +364,6 @@
     </div>
     <button id="flip">Change server ⇄</button>
   </div>
-  <div class="abandonRow"><button id="abandonBtn" class="linklike">Match abandoned — nominate winner</button></div>
   <div class="overlay" id="histDrawer">
     <div class="sheet" style="max-width:min(580px,94vw);text-align:left;max-height:82vh;overflow:auto;padding:20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
@@ -582,6 +598,7 @@ function show(scr){
   document.body.classList.toggle('scoring', lock);
   document.documentElement.style.overflow=lock?'hidden':'';
   document.body.style.overflow=lock?'hidden':'';
+  if(scr==='score')renderQueueBar_();
 }
 
 /* palette swatches */
@@ -853,6 +870,85 @@ function applyFixture(fx){
 }
 function banner(id,kind,msg){var el=$(id);if(!msg){el.innerHTML='';return;}el.innerHTML='<div class="banner '+kind+'">'+esc(msg)+'</div>';}
 
+/* ---- scoring screen: "other fixtures" queue (same two teams, same date) ---- */
+function relatedFixtures_(){
+  if(!activeFixture||!activeFixture.team1||!activeFixture.team2)return [];
+  return allFixtures.filter(function(f){
+    if(f.id===activeFixture.id)return false;
+    if(String(f.scheduled||'')!==String(activeFixture.scheduled||''))return false;
+    var sameTeams=(f.team1===activeFixture.team1&&f.team2===activeFixture.team2)||(f.team1===activeFixture.team2&&f.team2===activeFixture.team1);
+    if(!sameTeams)return false;
+    if(['Played','Scratched'].indexOf(f.status)>=0)return false;
+    return true;
+  });
+}
+function buildQueueCard_(fx){
+  var card=document.createElement('div');card.className='qcard';
+  var line=document.createElement('div');line.className='qline';line.textContent='Line '+(fx.line||'?');
+  card.appendChild(line);
+  var players=document.createElement('div');players.className='qplayers';
+  var p1=buildPlayerPill_(fx,fx.player1Id,fx.player1||'?');
+  var p2=buildPlayerPill_(fx,fx.player2Id,fx.player2||'?');
+  players.appendChild(p1.btn);players.appendChild(document.createTextNode(' vs '));players.appendChild(p2.btn);
+  card.appendChild(players);
+  [p1,p2].forEach(function(p){
+    if(!p.subId)return;
+    var link=document.createElement('button');link.type='button';link.className='sub-link';
+    link.textContent='Change/clear sub';
+    link.onclick=function(e){e.stopPropagation();openSubPicker_(fx,p.playerId,p.playerName,true);};
+    card.appendChild(link);
+  });
+  if(fixtureReadiness_(fx).ready){
+    card.classList.add('ready');
+    var badge=document.createElement('span');badge.className='qnext';badge.textContent='▶ Next to play';
+    card.appendChild(badge);
+  }
+  card.onclick=function(){switchToFixture_(fx);};
+  return card;
+}
+function renderQueueBar_(){
+  var host=$('queueBar');if(!host)return;
+  var related=relatedFixtures_();
+  if(!related.length){host.classList.remove('show');host.innerHTML='';return;}
+  host.innerHTML='';
+  related.forEach(function(fx){host.appendChild(buildQueueCard_(fx));});
+  host.classList.add('show');
+}
+// Tapping a queue card leaves the current match (with the same "unsaved
+// progress" confirm as Exit) and loads the tapped fixture on the setup
+// screen, ready to start - deliberately not auto-starting, since scorer/ref
+// names and first-serve are per-match choices that shouldn't be silently
+// carried over from whatever was last set.
+function switchToFixture_(fx){
+  if(M&&!M.over&&M.log&&M.log.length){
+    if(!confirm('Switch to this fixture without saving the current match?'))return;
+  }
+  clearInterval(tick);
+  applyFixture(fx);
+  show('setup');
+}
+// After marking/clearing an arrival or changing a sub nomination, refresh
+// whichever fixture view is actually visible (the setup screen's list, or
+// the score screen's queue bar) rather than assuming which one is active.
+function refreshFixtureViews_(){
+  if($('setup').classList.contains('active'))applyFixtureFilter();
+  if($('score').classList.contains('active'))renderQueueBar_();
+}
+function refreshQueueData_(){
+  var related=relatedFixtures_();
+  if(!related.length)return;
+  var ids=related.map(function(f){return f.id;});
+  var date=activeFixture.scheduled;
+  Promise.all([
+    callApi({action:'arrivalStatus', fixtureIds:JSON.stringify(ids), date:date}).then(function(result){
+      (result.data||[]).forEach(function(row){arrivalStatus[row.fixture_id+':'+row.player_id]=row.arrived_at;});
+    }),
+    callApi({action:'subNominations', fixtureIds:JSON.stringify(ids)}).then(function(result){
+      (result.data||[]).forEach(function(row){subNominations[row.fixture_id+':'+row.original_player_id]=row.sub_player_id;});
+    })
+  ]).then(renderQueueBar_).catch(function(){});
+}
+
 function loadFixtures(retryOnTimeout){
   var host=$('fixtures');host.innerHTML='<div class="hint">Looking for fixtures…</div>';
   if(!scriptConfigured()||!CONFIG.SHARED_SECRET){host.innerHTML='<div class="hint">Enter the private club access code to load fixtures. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Enter club code</button></div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
@@ -880,7 +976,7 @@ $('fxReady').onchange=applyFixtureFilter;
 // Tap a player's name on a fixture card to toggle their arrival status.
 function toggleArrival_(fx, playerId, currentlyArrived, btn, retryOnTimeout){
   if(!playerId){alert('This player is not linked to a player record yet.');return;}
-  var date=$('fxDate').value||localDate();
+  var date=fx.scheduled||$('fxDate').value||localDate();
   btn.disabled=true;
   if(retryOnTimeout===undefined)retryOnTimeout=true;
   var call=currentlyArrived
@@ -889,7 +985,7 @@ function toggleArrival_(fx, playerId, currentlyArrived, btn, retryOnTimeout){
   call.then(function(){
     var key=fx.id+':'+playerId;
     if(currentlyArrived) delete arrivalStatus[key]; else arrivalStatus[key]=new Date().toISOString();
-    applyFixtureFilter();
+    refreshFixtureViews_();
   }).catch(function(err){
     // markArrival/clearArrival are both idempotent server-side (upsert keyed
     // on date+fixture+player; delete-if-exists), so a timeout can be safely
@@ -982,7 +1078,7 @@ function saveSubNomination_(subPlayerId){
   callApi({action:'nominateSub', fixtureId:ctx.fx.id, originalPlayerId:ctx.playerId, subPlayerId:subPlayerId}).then(function(){
     subNominations[ctx.fx.id+':'+ctx.playerId]=subPlayerId;
     closeSubPicker_();
-    applyFixtureFilter();
+    refreshFixtureViews_();
   }).catch(function(err){
     alert('Could not save substitute: '+(err.msg||err.reason||'unknown error'));
   });
@@ -993,7 +1089,7 @@ $('subPickerClear').onclick=function(){
   callApi({action:'clearSubNomination', fixtureId:ctx.fx.id, originalPlayerId:ctx.playerId}).then(function(){
     delete subNominations[ctx.fx.id+':'+ctx.playerId];
     closeSubPicker_();
-    applyFixtureFilter();
+    refreshFixtureViews_();
   }).catch(function(err){
     alert('Could not clear substitute: '+(err.msg||err.reason||'unknown error'));
   });
@@ -1381,7 +1477,11 @@ function publishProgress(){
  callApi({action:'progress',data:JSON.stringify({fixtureId:activeFixture.id,matchId:M.matchId,games:matchGamesScore(M),points:M.points,players:M.config.players.map(function(p){return p.name;})})}).catch(function(e){console.warn('Live fixture status not updated',e.msg||e.reason||'offline');}).finally(function(){progressBusy=false;});
 }
 setInterval(function(){if(M&&!M.over)publishProgress();},30000);
-setInterval(function(){if(document.visibilityState==='visible'&&$('setup').classList.contains('active')&&CONFIG.SHARED_SECRET)fetchFixtures().then(renderFixtures).catch(function(){});},30000);
+setInterval(function(){
+  if(document.visibilityState!=='visible'||!CONFIG.SHARED_SECRET)return;
+  if($('setup').classList.contains('active'))fetchFixtures().then(renderFixtures).catch(function(){});
+  else if($('score').classList.contains('active'))refreshQueueData_();
+},30000);
 </script>
 </body>
 </html>
