@@ -42,7 +42,7 @@ function doGet(e) {
       if(e.parameter.action==='authorizeDevice')return out_(authorizeDevice_(e.parameter.code),e);
       requireClubCode_(e.parameter.secret);
       var action = e.parameter.action;
-      if (action === 'fixtures') return out_({ ok:true, fixtures: readFixtures_() }, e);
+      if (action === 'fixtures') return out_({ ok:true, fixtures: readFixtures_(e.parameter.date) }, e);
       if (action === 'result')   return out_(writeResult_(JSON.parse(e.parameter.data || '{}')), e);
       if (action === 'progress') return out_(fixtureProgress_(JSON.parse(e.parameter.data||'{}')),e);
       if (action === 'tie')      return out_(tieResults_(e.parameter.fixtureId || ''), e);

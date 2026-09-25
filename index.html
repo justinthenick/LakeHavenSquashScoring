@@ -546,8 +546,10 @@ function callApi(params){
   });
 }
 
-function fetchFixtures(){
-  return callApi({action:'fixtures'}).then(function(d){return d.fixtures||[];});
+function fetchFixtures(date){
+  var params={action:'fixtures'};
+  if(date)params.date=date;
+  return callApi(params).then(function(d){return d.fixtures||[];});
 }
 function postResult(payload){
   // Send the whole result as one JSON param over JSONP, so the confirmation
@@ -693,11 +695,19 @@ wireSub(0);wireSub(1);
 
 /* fixtures list */
 var allFixtures=[];
+var loadedFixtureDates={}; // date string -> true, dates already fetched into allFixtures
+function mergeFixtures_(list){
+  var byId={};
+  allFixtures.forEach(function(f){byId[f.id]=f;});
+  list.forEach(function(f){byId[f.id]=f;});
+  return Object.keys(byId).map(function(k){return byId[k];});
+}
 function renderFixtures(list){
+  var merged=mergeFixtures_(list);
   // Skip the redraw entirely when nothing changed - avoids the whole fixture
   // list flashing (full DOM rebuild) on every 30s background poll.
-  if(allFixtures.length && JSON.stringify(list)===JSON.stringify(allFixtures)) return;
-  allFixtures=list; if(!$('fxDate').value)$('fxDate').value=localDate(); applyFixtureFilter();
+  if(allFixtures.length && JSON.stringify(merged)===JSON.stringify(allFixtures)) return;
+  allFixtures=merged; if(!$('fxDate').value)$('fxDate').value=localDate(); applyFixtureFilter();
 }
 function uniqSorted(arr){var s={};arr.forEach(function(x){if(x!=null&&x!=='')s[String(x)]=1;});return Object.keys(s).sort();}
 function syncSelect(id,allLabel,values){
@@ -1052,25 +1062,37 @@ function refreshQueueData_(){
   ]).then(function(){renderQueueBar_();if($('gap').classList.contains('active')&&lastTieData)renderTie(lastTieData);}).catch(function(){});
 }
 
-function loadFixtures(retryOnTimeout){
-  var host=$('fixtures');host.innerHTML='<div class="hint">Looking for fixtures…</div>';
-  if(!scriptConfigured()||!CONFIG.SHARED_SECRET){host.innerHTML='<div class="hint">Enter the private club access code to load fixtures. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Enter club code</button></div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
+// Loading the whole season on every visit was the main source of slowness
+// and repeated reload-button presses - normal use only ever looks at one
+// date at a time, so fetch just that date and merge it into allFixtures.
+// Already-loaded dates render instantly from cache unless force is set
+// (the reload button, a background refresh, or after saving a result).
+function loadFixturesForDate(date,force,retryOnTimeout){
+  if(!scriptConfigured()||!CONFIG.SHARED_SECRET){$('fixtures').innerHTML='<div class="hint">Enter the private club access code to load fixtures. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Enter club code</button></div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
+  if(!force&&loadedFixtureDates[date]){applyFixtureFilter();return;}
   if(retryOnTimeout===undefined)retryOnTimeout=true;
-  fetchFixtures().then(renderFixtures).catch(function(err){
+  if(!loadedFixtureDates[date])$('fixtures').innerHTML='<div class="hint">Looking for fixtures…</div>';
+  fetchFixtures(date).then(function(list){
+    loadedFixtureDates[date]=true;
+    renderFixtures(list);
+  }).catch(function(err){
     // Apps Script's first request after being idle spins up a fresh execution
     // environment and can be much slower than normal - silently retry once
     // before showing an error, rather than making a cold start look like a
     // broken deployment.
-    if(retryOnTimeout && err && err.reason==='timeout'){ loadFixtures(false); return; }
+    if(retryOnTimeout && err && err.reason==='timeout'){ loadFixturesForDate(date,force,false); return; }
+    if(loadedFixtureDates[date])return; // already showing this date's cached fixtures - leave them displayed
     var m=err.msg||err.reason||'offline';
     var hint=(m==='timeout'||m==='network')?' This usually means the URL isn’t the deployed <b>/exec</b> web app (the <b>/dev</b> URL won’t work here), or the deployment’s access isn’t set to <b>Anyone</b>.':'';
-    host.innerHTML='<div class="hint">Couldn’t load fixtures ('+esc(m)+').'+hint+' Use <b>Access settings</b> below to check the URL &amp; secret, or enter players manually.</div>';
+    $('fixtures').innerHTML='<div class="hint">Couldn’t load fixtures ('+esc(m)+').'+hint+' Use <b>Access settings</b> below to check the URL &amp; secret, or enter players manually.</div>';
   });
 }
-$('reloadFx').onclick=function(){loadFixtures();};
+function currentFxDate_(){return $('fxDate').value||localDate();}
+function loadFixtures(){loadFixturesForDate(currentFxDate_(),false);}
+$('reloadFx').onclick=function(){loadFixturesForDate(currentFxDate_(),true);};
 $('hidePlayed').onchange=applyFixtureFilter;
 $('fxSearch').oninput=applyFixtureFilter;
-$('fxDate').onchange=applyFixtureFilter;
+$('fxDate').onchange=function(){loadFixturesForDate(currentFxDate_(),false);};
 $('fxComp').onchange=applyFixtureFilter;
 $('fxTeam').onchange=applyFixtureFilter;
 $('fxLine').onchange=applyFixtureFilter;
@@ -1558,7 +1580,7 @@ $('save').onclick=function(){
   // Refresh right away so this fixture shows as Played immediately (in the
   // fixture list and in any score-screen queue bar) rather than waiting on
   // the next 30s background poll.
-  if(scriptConfigured())fetchFixtures().then(renderFixtures).catch(function(){});
+  if(scriptConfigured()&&activeFixture)loadFixturesForDate(activeFixture.scheduled,true);
  },function(err){
   p.queueError=err.msg||err.reason||'Connection failed';enqueue(p);pendingPayload=null;
   banner('saveBanner',err.reason==='server'||err.reason==='auth'?'err':'warn',err.msg||'Connection unavailable. Result stored on this device and will retry when online.');
@@ -1569,7 +1591,7 @@ $('undoMatch').onclick=function(){if(!M||M.locked)return;undo(M);lastGames=M.gam
 $('again').onclick=function(){M=null;activeFixture=null;lastGames=0;clearActive();
   plannedNames=['',''];if($('sub1'))$('sub1').checked=false;if($('sub2'))$('sub2').checked=false;
   lockField(0,false);lockField(1,false);hideSuggest(0);hideSuggest(1);
-  banner('setupBanner','',null);show('setup');loadFixtures();};
+  banner('setupBanner','',null);show('setup');loadFixturesForDate(currentFxDate_(),true);};
 
 /* ==========================================================================
    7. RESUME + BOOT
@@ -1645,7 +1667,7 @@ function publishProgress(){
 setInterval(function(){if(M&&!M.over)publishProgress();},30000);
 setInterval(function(){
   if(document.visibilityState!=='visible'||!CONFIG.SHARED_SECRET)return;
-  if($('setup').classList.contains('active'))fetchFixtures().then(renderFixtures).catch(function(){});
+  if($('setup').classList.contains('active'))loadFixturesForDate(currentFxDate_(),true);
   else if($('score').classList.contains('active'))refreshQueueData_();
 },30000);
 </script>

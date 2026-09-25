@@ -75,10 +75,25 @@ function uniq_(arr) {
   return out;
 }
 
-function readFixtures_() {
+function readFixtures_(date) {
   var res = sbGet_('fixtures', 'select=fixture_id,round,line,scheduled,comp_ref,team1_id,team2_id,player1_id,player2_id,played&player1_id=not.is.null');
   if (!res.ok) throw new Error('readFixtures: ' + res.error);
   var fixtures = res.data;
+  var tz = 'Australia/Sydney';
+  if (date) {
+    // Filtered on the Apps Script side using the same timezone-aware
+    // conversion used below to build each fixture's display date, rather
+    // than at the Supabase query level - `scheduled` needs a timezone
+    // conversion to get the right calendar date, so an equality filter on
+    // the raw column could silently exclude fixtures near a day boundary.
+    fixtures = fixtures.filter(function(f){
+      if (!f.scheduled) return false;
+      var sched;
+      try { sched = Utilities.formatDate(new Date(f.scheduled), tz, 'yyyy-MM-dd'); }
+      catch (e) { sched = String(f.scheduled).slice(0, 10); }
+      return sched === date;
+    });
+  }
   if (!fixtures.length) return [];
 
   var statuses=fixtureStatuses_(fixtures);
@@ -89,7 +104,6 @@ function readFixtures_() {
   requireSb_(sbGet_('teams', 'select=team_id,team_name')).data.forEach(function(t){ teamNames[t.team_id] = t.team_name; });
 
   var rules={};requireSb_(sbGet_('comps','select=comp_ref,points_per_game,win_by_two,best_of')).data.forEach(function(c){rules[c.comp_ref]=c;});
-  var tz = 'Australia/Sydney';
   return fixtures.map(function(f){
     var sched = '';
     if (f.scheduled) {
