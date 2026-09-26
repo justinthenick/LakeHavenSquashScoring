@@ -44,10 +44,13 @@
     border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);appearance:none}
   select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%235d6b78' stroke-width='2.5'><path d='M5 8l5 5 5-5'/></svg>");
     background-repeat:no-repeat;background-position:right 14px center}
-  .row{display:flex;gap:12px}
+  .row{display:flex}
   .row>*{flex:1}
-  .swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
-  .subrow{display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
+  .row>*:not(:last-child){margin-right:12px}
+  .swatches{display:flex;flex-wrap:wrap;margin:8px -10px -10px 0}
+  .swatches>*{margin:0 10px 10px 0}
+  .subrow{display:flex;align-items:center;margin-top:8px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer}
+  .subrow>*:not(:last-child){margin-right:8px}
   .subrow input[type="checkbox"]{width:22px;height:22px;flex:none;accent-color:var(--ink);margin:0}
   .linklike{background:none;border:none;color:var(--muted);font-size:12px;font-weight:700;text-decoration:underline;padding:10px;min-height:auto}
   input.locked{background:var(--court-2);color:var(--muted)}
@@ -68,8 +71,10 @@
   .toggle button{flex:1;padding:14px;font-weight:800;font-size:16px;color:var(--muted)}
   .toggle button[aria-pressed="true"]{background:var(--ink);color:#fff}
   .hint{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.4}
-  .fixtures{margin-top:8px;display:flex;flex-direction:column;gap:10px}
-  .fxrow{display:flex;gap:8px;margin-bottom:8px}
+  .fixtures{margin-top:8px;display:flex;flex-direction:column}
+  .fixtures>*:not(:last-child){margin-bottom:10px}
+  .fxrow{display:flex;margin-bottom:8px}
+  .fxrow>*:not(:last-child){margin-right:8px}
   .fxrow>*{flex:1;min-width:0}
   .fx{display:flex;justify-content:space-between;align-items:center;padding:16px;
     background:#fff;border:1px solid var(--line);border-radius:14px;text-align:left;font-weight:700}
@@ -96,17 +101,20 @@
   .hname{display:none;font-weight:800;font-size:15px;max-width:24vw;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .exit{color:var(--danger);font-weight:800;font-size:15px;padding:6px 8px}
-  .queuebar{display:none;gap:6px;overflow-x:auto;padding:0 10px 6px;flex:none;-webkit-overflow-scrolling:touch}
+  .queuebar{display:none;overflow-x:auto;padding:0 10px 6px;flex:none;-webkit-overflow-scrolling:touch}
+  .queuebar>*:not(:last-child){margin-right:6px}
   .queuebar.show{display:flex}
   .qcard{flex:1 1 100px;min-width:88px;max-width:170px;background:#fff;border:1px solid var(--line);
     border-radius:12px;padding:6px 8px;cursor:pointer;font-weight:700;font-size:12px;color:var(--ink);text-align:left}
   .qcard.ready{border-color:#238755;border-width:2px}
   .qcard.played{background:var(--card);cursor:default}
   .qcard .qline{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px;font-weight:800}
-  .qcard .qplayers{display:flex;flex-direction:column;gap:2px;align-items:stretch}
+  .qcard .qplayers{display:flex;flex-direction:column;align-items:stretch}
+  .qcard .qplayers>*:not(:last-child){margin-bottom:2px}
   .qcard .arrive-pill{display:block;width:100%;text-align:center;white-space:normal;font-size:11px;padding:1px 6px}
   .qcard .qresult{margin-top:4px;font-size:11px;color:var(--muted);font-weight:800;line-height:1.25}
-  .arena{flex:1;display:flex;gap:10px;padding:6px 10px 8px;min-height:0}
+  .arena{flex:1;display:flex;padding:6px 10px 8px;min-height:0}
+  .arena>*:not(:last-child){margin-right:10px}
   .panel{flex:1;border-radius:22px;position:relative;display:flex;flex-direction:column;
     align-items:stretch;color:#fff;overflow:hidden;padding:12px 12px 8px;
     transition:transform .06s ease}
@@ -142,9 +150,9 @@
   .msg.handout{background:#efeafc;color:#5340a8;border-color:#dcd2f6}
   .msg.game{background:#dff2e5;color:#1c6b3d;border-color:#bfe6cd}
   .msg.match{background:var(--ink);color:#fff;border-color:var(--ink);box-shadow:0 4px 16px rgba(0,0,0,.22)}
-  .histrow{display:grid;grid-template-columns:30px 62px 1fr auto;gap:8px;align-items:center;
+  .histrow{display:grid;grid-template-columns:30px 62px 1fr auto;grid-gap:8px;gap:8px;align-items:center;
     padding:9px 4px;border-bottom:1px solid var(--line);font-size:14px}
-  .histhead,.histrow6{display:grid;grid-template-columns:30px 28px 1fr 1fr 1.1fr 42px 1fr;gap:6px;
+  .histhead,.histrow6{display:grid;grid-template-columns:30px 28px 1fr 1fr 1.1fr 42px 1fr;grid-gap:6px;gap:6px;
     align-items:center;text-align:center;padding:8px 4px;border-bottom:1px solid var(--line);font-size:14px}
   .histhead{position:sticky;top:0;background:var(--card);font-weight:800;font-size:11px;
     text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
@@ -152,7 +160,7 @@
   .histrow6 .hs{color:var(--muted);font-size:13px}
   .histrow6 .hw{font-weight:800}
   .gapsummary{margin:10px 0 14px;text-align:left;border:1px solid var(--line);border-radius:14px;overflow:hidden}
-  .gaprow{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px;padding:9px 12px;
+  .gaprow{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;grid-gap:6px;gap:6px;padding:9px 12px;
     border-bottom:1px solid var(--line);font-size:16px;align-items:center}
   .gaprow span:first-child{text-align:left;color:var(--muted);font-weight:700}
   .gaprow span{text-align:center;font-weight:800}
@@ -164,7 +172,7 @@
   .gaptie{text-align:left}
   .tiehead{font-size:20px;font-weight:900;text-align:center;margin:2px 0 10px;letter-spacing:.01em}
   .tielines{border:1px solid var(--line);border-radius:14px;overflow:hidden}
-  .tierow{display:grid;grid-template-columns:28px 32px 1fr auto;gap:6px;align-items:center;
+  .tierow{display:grid;grid-template-columns:28px 32px 1fr auto;grid-gap:6px;gap:6px;align-items:center;
     padding:9px 10px;border-bottom:1px solid var(--line);font-size:15px}
   .tierow:last-child{border-bottom:none}
   .tierow .tl{font-weight:900;color:var(--muted)}
@@ -199,7 +207,8 @@
     .scorehead .game{font-size:24px}
     .exit{font-size:21px}
     .hname{font-size:22px;max-width:22vw}
-    .queuebar{padding:0 18px 10px;gap:10px}
+    .queuebar{padding:0 18px 10px}
+    .queuebar>*:not(:last-child){margin-right:10px}
     .qcard{flex:1 1 140px;min-width:130px;max-width:220px;padding:10px 12px;font-size:15px;border-radius:14px}
     .qcard .qline{font-size:12px}
     .qcard .arrive-pill{font-size:14px;padding:2px 8px}
@@ -216,7 +225,8 @@
     .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:19%}
     .panel .tapcue{font-size:15px}
     .footbar button{padding:14px;font-size:19px}
-    .clockbar{font-size:24px;gap:32px;padding:8px 12px 18px}
+    .clockbar{font-size:24px;padding:8px 12px 18px}
+    .clockbar>*:not(:last-child){margin-right:32px}
     .clockbar b{font-size:36px}
     .clockbar .gamesTally{padding-right:22px}
     .clockbar .gamesTally b{font-size:36px}
@@ -234,20 +244,25 @@
     .scorehead{padding:calc(4px + var(--safe-top)) 14px 2px}
     .msgbar{height:34px;padding-top:0}
     .msg{font-size:13px;padding:5px 12px}
-    .arena{gap:8px;padding:2px 8px 4px}
+    .arena{padding:2px 8px 4px}
+    .arena>*:not(:last-child){margin-right:8px}
     .footbar{padding:4px 8px calc(4px + var(--safe-bot))}
     .footbar button{padding:8px;font-size:13px;border-radius:12px}
-    .clockbar{font-size:11px;gap:10px;padding:1px 8px}
+    .clockbar{font-size:11px;padding:1px 8px}
+    .clockbar>*:not(:last-child){margin-right:10px}
     .clockbar b{font-size:13px}
     .clockbar .gamesTally{padding-right:8px}
   }
-  .footbar{display:flex;gap:10px;padding:4px 10px calc(6px + var(--safe-bot))}
+  .footbar{display:flex;padding:4px 10px calc(6px + var(--safe-bot))}
+  .footbar>*:not(:last-child){margin-right:10px}
   .footbar button{flex:1;padding:12px;border-radius:16px;background:var(--card);
     border:1px solid var(--line);font-weight:800;font-size:15px}
-  .clockbar{flex:none;display:flex;align-items:center;justify-content:center;gap:22px;
+  .clockbar{flex:none;display:flex;align-items:center;justify-content:center;
     padding:6px 12px 14px;color:var(--muted);font-weight:800;font-size:18px;line-height:1.2}
+  .clockbar>*:not(:last-child){margin-right:22px}
   .clockbar b{color:var(--ink);font-size:26px;font-weight:900}
-  .clockbar .gamesTally{display:flex;gap:14px;color:var(--ink);padding-right:16px;border-right:2px solid var(--line)}
+  .clockbar .gamesTally{display:flex;color:var(--ink);padding-right:16px;border-right:2px solid var(--line)}
+  .clockbar .gamesTally>*:not(:last-child){margin-right:14px}
   .clockbar .gamesTally .gt-l{white-space:nowrap}
   .clockbar .gamesTally b{font-size:26px}
 
@@ -267,7 +282,8 @@
   .breakclock{font-size:30px;font-weight:900;color:var(--ink);margin:8px 0 20px;letter-spacing:.02em}
 
   /* ---------- summary table ---------- */
-  .result-hero{display:flex;align-items:center;justify-content:center;gap:22px;margin:22px 0 10px}
+  .result-hero{display:flex;align-items:center;justify-content:center;margin:22px 0 10px}
+  .result-hero>*:not(:last-child){margin-right:22px}
   .result-hero .g{font-size:76px;font-weight:900;line-height:1}
   .result-hero .vs{width:3px;height:56px;background:var(--line);border-radius:2px}
   .won{font-weight:800;letter-spacing:.14em;text-transform:uppercase;font-size:13px;text-align:center;color:var(--muted)}
@@ -1626,7 +1642,7 @@ function showResume(saved){
   m.games.forEach(function(g){gs[g.winner]++;});
   var status=m.over?'finished, not yet saved':('in progress '+gs[0]+'\u2013'+gs[1]);
   var el=$('setupBanner');
-  el.innerHTML='<div class="banner warn" style="display:flex;justify-content:space-between;align-items:center;gap:12px">'+
+  el.innerHTML='<div class="banner warn" style="display:flex;justify-content:space-between;align-items:center">'+
     '<span>'+esc(n[0].name)+' vs '+esc(n[1].name)+' — '+status+'</span>'+
     '<span style="white-space:nowrap"><button id="rResume" style="font-weight:800;color:#7a5c00;background:none;border:none;text-decoration:underline">Resume</button>&nbsp;'+
     '<button id="rDiscard" style="font-weight:800;color:#8a231a;background:none;border:none">Discard</button></span></div>';
