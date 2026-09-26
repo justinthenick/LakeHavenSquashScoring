@@ -192,7 +192,7 @@
   }
   /* bind the score screen to the visible viewport (normal flow, page scroll locked in show())
      so the header stays below the browser bar and the screen can't be dragged/overscrolled */
-  #score.active{height:100dvh;height:100svh;min-height:0;max-height:100svh;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
+  #score.active{height:100vh;height:100dvh;height:100svh;min-height:0;max-height:100vh;max-height:100svh;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
   /* ---------- large devices (iPad): bigger everything, roomier message ---------- */
   @media (min-width:768px) and (min-height:700px){
     .scorehead{padding:calc(14px + var(--safe-top)) 22px 10px}
@@ -252,12 +252,12 @@
   .clockbar .gamesTally b{font-size:26px}
 
   /* ---------- between-games overlay ---------- */
-  .overlay{position:fixed;inset:0;background:rgba(15,22,30,.72);display:none;
+  .overlay{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(15,22,30,.72);display:none;
     align-items:center;justify-content:center;padding:24px;z-index:20}
   .overlay.active{display:flex}
   .sheet{background:var(--card);border-radius:22px;padding:24px;width:100%;max-width:420px;text-align:center}
-  #gap .sheet{max-height:calc(100dvh - 20px);overflow:auto}
-  .rotatehint{position:fixed;inset:0;z-index:60;background:var(--court);display:none;
+  #gap .sheet{max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px);overflow:auto}
+  .rotatehint{position:fixed;top:0;right:0;bottom:0;left:0;z-index:60;background:var(--court);display:none;
     align-items:center;justify-content:center;text-align:center;padding:30px;
     font-size:21px;font-weight:800;color:var(--ink);line-height:1.4}
   .rotatehint .ic{font-size:56px;display:block;margin-bottom:16px}
