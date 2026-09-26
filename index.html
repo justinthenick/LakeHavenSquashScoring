@@ -205,7 +205,7 @@
      (e.g. a tablet in landscape, which has much less height to work with
      than a phone in portrait), the screen scrolls instead of silently
      clipping the footer buttons out of reach. */
-  #score.active{height:100vh;height:100dvh;height:100svh;min-height:0;max-height:100vh;max-height:100svh;overflow-y:auto;overscroll-behavior:none;touch-action:manipulation}
+  #score.active{height:100vh;height:calc(var(--vh,1vh) * 100);height:100dvh;height:100svh;min-height:0;max-height:100vh;max-height:calc(var(--vh,1vh) * 100);max-height:100svh;overflow-y:auto;overscroll-behavior:none;touch-action:manipulation}
   /* ---------- large devices (iPad): bigger everything, roomier message ----------
      min-height raised well above the gap overlay's own 700px breakpoint - a
      tablet in landscape can be comfortably >=768px wide but only 700-850px
@@ -283,7 +283,7 @@
     align-items:center;justify-content:center;padding:24px;z-index:20}
   .overlay.active{display:flex}
   .sheet{background:var(--card);border-radius:22px;padding:24px;width:100%;max-width:420px;text-align:center}
-  #gap .sheet{max-height:calc(100vh - 20px);max-height:calc(100dvh - 20px);overflow:auto}
+  #gap .sheet{max-height:calc(100vh - 20px);max-height:calc(var(--vh,1vh) * 100 - 20px);max-height:calc(100dvh - 20px);overflow:auto}
   .rotatehint{position:fixed;top:0;right:0;bottom:0;left:0;z-index:60;background:var(--court);display:none;
     align-items:center;justify-content:center;text-align:center;padding:30px;
     font-size:21px;font-weight:800;color:var(--ink);line-height:1.4}
@@ -483,6 +483,19 @@ try{
   if(!CONFIG.APPS_SCRIPT_URL && _cfg.url)CONFIG.APPS_SCRIPT_URL=_cfg.url;
   if(_cfg.token)CONFIG.SHARED_SECRET=_cfg.token;
 }catch(e){}
+
+// 100vh on mobile is the height as if the browser's address bar/tabs weren't
+// there, so it can be taller than what's actually visible - nothing
+// technically "overflows" the box, but the bottom of it (e.g. the footer
+// buttons) ends up positioned below the real visible area, with no
+// scrollbar to reveal it. dvh/svh fix this natively but only from ~Chrome
+// 108; --vh (driven by the real window.innerHeight) works everywhere and is
+// used as the fallback ahead of dvh/svh in the CSS, which still wins on
+// browsers that support it.
+function setVhVar_(){document.documentElement.style.setProperty('--vh',(window.innerHeight*0.01)+'px');}
+setVhVar_();
+window.addEventListener('resize',setVhVar_);
+window.addEventListener('orientationchange',setVhVar_);
 function openSettings(){
  var secret=prompt('Enter the private four-character club code (letters or digits):','');if(secret===null)return;
  secret=secret.trim();
