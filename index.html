@@ -200,9 +200,21 @@
   }
   /* bind the score screen to the visible viewport (normal flow, page scroll locked in show())
      so the header stays below the browser bar and the screen can't be dragged/overscrolled */
-  #score.active{height:100vh;height:100dvh;height:100svh;min-height:0;max-height:100vh;max-height:100svh;overflow:hidden;overscroll-behavior:none;touch-action:manipulation}
-  /* ---------- large devices (iPad): bigger everything, roomier message ---------- */
-  @media (min-width:768px) and (min-height:700px){
+  /* overflow-y:auto (not hidden) is a deliberate safety net: if the queue
+     bar/clockbar/score panels ever add up to more than the viewport height
+     (e.g. a tablet in landscape, which has much less height to work with
+     than a phone in portrait), the screen scrolls instead of silently
+     clipping the footer buttons out of reach. */
+  #score.active{height:100vh;height:100dvh;height:100svh;min-height:0;max-height:100vh;max-height:100svh;overflow-y:auto;overscroll-behavior:none;touch-action:manipulation}
+  /* ---------- large devices (iPad): bigger everything, roomier message ----------
+     min-height raised well above the gap overlay's own 700px breakpoint - a
+     tablet in landscape can be comfortably >=768px wide but only 700-850px
+     tall once the browser's own chrome (tabs/address bar) is subtracted, and
+     this block's enlarged clockbar/queue bar pushed the footer buttons off
+     the bottom of exactly that kind of screen. Portrait tablets clear this
+     easily; landscape ones now fall back to the smaller base sizing, which
+     fits, instead of getting the "big screen" treatment that doesn't. */
+  @media (min-width:768px) and (min-height:900px){
     .scorehead{padding:calc(14px + var(--safe-top)) 22px 10px}
     .scorehead .game{font-size:24px}
     .exit{font-size:21px}
