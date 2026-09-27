@@ -347,8 +347,8 @@
     <div class="hint" id="formatHint" style="margin-top:18px">Select a fixture to load its scoring format.</div>
 
     <div class="row" style="margin-top:6px">
-      <div><label class="field">Scorer</label><input id="scorer" placeholder="Scorer name" autocomplete="off"></div>
-      <div><label class="field">Referee</label><input id="ref" placeholder="Ref name" autocomplete="off"></div>
+      <div><label class="field">Scorer</label><input id="scorer" placeholder="Scorer name" autocomplete="off"><div id="sugScorer" class="suggest"></div></div>
+      <div><label class="field">Referee</label><input id="ref" placeholder="Ref name" autocomplete="off"><div id="sugRef" class="suggest"></div></div>
     </div>
 
     <label class="field">First serve</label>
@@ -719,6 +719,42 @@ function addNewPlayer(i,name){
     if(host) host.innerHTML='<div class="hint">Couldn\u2019t add player'+(err&&err.msg?(': '+esc(err.msg)):'')+'. Try again.</div>';
   });
 }
+
+// Same searchable-list-with-add pattern as fixture player fields, generalized
+// for any plain text input (Scorer/Referee) that should resolve against the
+// known player roster rather than accept arbitrary free text unassisted.
+function wirePlayerSearch_(inputId,suggestId){
+  var input=$(inputId), host=$(suggestId);
+  if(!input||!host)return;
+  function hide(){host.innerHTML='';}
+  function render(q){
+    var raw=(q||'').trim(), ql=raw.toLowerCase();
+    var matches=ql?allPlayers.filter(function(n){return n.toLowerCase().indexOf(ql)>-1;}).slice(0,6):[];
+    var exact=ql && allPlayers.some(function(n){return n.toLowerCase()===ql;});
+    var html=matches.map(function(n){return '<button type="button" class="sugitem" data-n="'+esc(n)+'">'+esc(n)+'</button>';}).join('');
+    if(raw && !exact) html+='<button type="button" class="sugitem add" data-add="'+esc(raw)+'">+ Add \u201c'+esc(raw)+'\u201d as new player</button>';
+    host.innerHTML=html;
+    [].slice.call(host.querySelectorAll('.sugitem')).forEach(function(b){
+      b.onclick=function(){
+        if(b.dataset.add!=null){
+          host.innerHTML='<div class="hint" style="padding:10px 0">Adding\u2026</div>';
+          callApi({action:'addPlayer',name:b.dataset.add}).then(function(d){
+            if(d&&d.name){ if(allPlayers.indexOf(d.name)<0)allPlayers.push(d.name); input.value=d.name; }
+            hide();
+          }).catch(function(err){
+            host.innerHTML='<div class="hint">Couldn\u2019t add player'+(err&&err.msg?(': '+esc(err.msg)):'')+'. Try again.</div>';
+          });
+        } else {
+          input.value=b.dataset.n; hide();
+        }
+      };
+    });
+  }
+  input.oninput=function(){render(input.value);};
+  input.onblur=function(){setTimeout(hide,150);};
+}
+wirePlayerSearch_('scorer','sugScorer');
+wirePlayerSearch_('ref','sugRef');
 function wireSub(i){
   var cb=$('sub'+(i+1)), input=$('n'+(i+1));
   cb.onchange=function(){
