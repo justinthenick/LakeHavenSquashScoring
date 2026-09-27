@@ -105,6 +105,7 @@
   <div class="cwbar">
     <select id="cwVenue"></select>
     <select id="cwCourt"></select>
+    <input type="date" id="cwDate" style="width:auto;padding:8px 10px;font-size:14px;border-radius:10px">
     <span class="spacer"></span>
     <button id="cwSettings">Change club code</button>
   </div>
@@ -213,6 +214,7 @@ $('cwSettings').onclick=function(){
 /* ---------- watch screen ---------- */
 function enterWatch_(){
   show('watch');
+  $('cwDate').value=cfg.date||localDate();
   populateSwitcher_();
   poll_();
   clearInterval(pollTimer);pollTimer=setInterval(poll_,8000);
@@ -234,6 +236,7 @@ $('cwVenue').onchange=function(){
   saveCfg_();populateSwitcher_();poll_();
 };
 $('cwCourt').onchange=function(){cfg.court=$('cwCourt').value;saveCfg_();poll_();};
+$('cwDate').onchange=function(){cfg.date=$('cwDate').value;saveCfg_();poll_();};
 
 var pollTimer=null,tickTimer=null;
 var allFixtures=[],arrivalStatus={},subNominations={},unavailableIds={};
@@ -259,7 +262,7 @@ function tieSiblings_(all,fx){
 
 function poll_(){
   if(!cfg.token||!cfg.venueId||!cfg.court)return;
-  var date=localDate();
+  var date=$('cwDate').value||cfg.date||localDate();
   callApi({action:'fixtures',date:date}).then(function(res){
     allFixtures=res.fixtures||[];
     var courtFixtures=allFixtures.filter(function(f){return f.venueId===cfg.venueId&&String(f.court||'')===String(cfg.court);});
@@ -344,7 +347,8 @@ function resultText_(fx){
 function renderBody_(current){
   var host=$('cwBody');
   if(!current){
-    host.innerHTML='<div class="idle">No fixture is currently allocated to '+esc(cfg.venueName||'this venue')+' Court '+esc(cfg.court)+'.</div>';
+    var d=$('cwDate').value||localDate();
+    host.innerHTML='<div class="idle">No fixture is allocated to '+esc(cfg.venueName||'this venue')+' Court '+esc(cfg.court)+' on '+esc(d)+'.</div>';
     return;
   }
   var siblings=tieSiblings_(allFixtures,current);
