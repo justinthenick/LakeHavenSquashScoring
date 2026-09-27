@@ -97,8 +97,9 @@ function addVenue(){assertAdmin_();return addVenue_.apply(null,arguments);}
 function updateVenue(){assertAdmin_();return updateVenue_.apply(null,arguments);}
 function removeVenue(){assertAdmin_();return removeVenue_.apply(null,arguments);}
 function getCourtAllocations(){assertAdmin_();return getCourtAllocations_.apply(null,arguments);}
-function setCourtAllocation(){assertAdmin_();return setCourtAllocation_.apply(null,arguments);}
-function removeCourtAllocation(){assertAdmin_();return removeCourtAllocation_.apply(null,arguments);}
+function setTieCourtAllocation(){assertAdmin_();return setTieCourtAllocation_.apply(null,arguments);}
+function removeTieCourtAllocation(){assertAdmin_();return removeTieCourtAllocation_.apply(null,arguments);}
+function autoDistributeCourts(){assertAdmin_();return autoDistributeCourts_.apply(null,arguments);}
 
 function getOutputConfig(){assertAdmin_();return getOutputConfig_.apply(null,arguments);}
 

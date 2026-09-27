@@ -146,7 +146,7 @@ function getAllComps_(){
 // applyRosterToFutureFixtures already fills player1_id/player2_id onto
 // every unplayed fixture from there, so cloning only needs to set up team
 // numbers/names and empty fixture shells with the right dates.
-function cloneComp_(sourceComp, newComp, newCompName, startDate, outputWorkbook){
+function cloneComp_(sourceComp, newComp, newCompName, startDate, outputWorkbook, venueId){
   var outputId=outputWorkbookId_(outputWorkbook);if(outputId)validateOutputWorkbook_(outputId);
   newComp = String(newComp||'').trim();
   if(!newComp) return {ok:false, error:'new comp code is required'};
@@ -218,8 +218,17 @@ function cloneComp_(sourceComp, newComp, newCompName, startDate, outputWorkbook)
   var fxIns = sbUpsert_('fixtures', fxRows);
   if(!fxIns.ok) return {ok:false, error:'fixture clone failed: '+fxIns.error};
 
+  var courtsAllocated=0;
+  venueId=String(venueId||'').trim();
+  if(venueId){
+    var dist=autoDistributeCourts_(newComp, venueId);
+    if(!dist.ok) return {ok:false, error:'comp created, but court auto-distribution failed: '+dist.error};
+    courtsAllocated=dist.allocated||0;
+  }
+
   return { ok:true, comp:newComp, teamsCloned:teamRows.length, fixturesCloned:fxRows.length,
-    rounds:roundNos.length, firstRoundDate:newDateFor(r1), lastRoundDate:newDateFor(roundNos[roundNos.length-1]) };
+    rounds:roundNos.length, firstRoundDate:newDateFor(r1), lastRoundDate:newDateFor(roundNos[roundNos.length-1]),
+    courtsAllocated:courtsAllocated };
 }
 
 // normalise a date to yyyy-MM-dd (handles Date objects and d/m/yy or d/m/yyyy strings)
@@ -1549,9 +1558,12 @@ function removeVenue_(id){
   return getVenues_();
 }
 
-// Every not-scratched fixture on the given date, joined with any existing
-// court allocation - admin sees allocated AND unallocated fixtures together
-// so nothing gets missed when working through a round.
+// Every fixture on the given date, grouped into ties (comp+round+the M#
+// suffix shared by all of a team-matchup's lines) - court allocation
+// operates at this level, since a tie's lines are always played on the
+// same court. The venue is NOT chosen here: it belongs to the comp (see
+// autoDistributeCourts_), so a tie whose comp has no venue yet is shown
+// read-only with a prompt to set one.
 function getCourtAllocations_(date){
   date=String(date||'').trim();
   if(!date)throw new Error('Select a date.');
@@ -1564,58 +1576,127 @@ function getCourtAllocations_(date){
     try{sched=Utilities.formatDate(new Date(f.scheduled),tz,'yyyy-MM-dd');}catch(e){sched=String(f.scheduled).slice(0,10);}
     return sched===date;
   });
-  if(!fixtures.length)return {ok:true,fixtures:[]};
+  if(!fixtures.length)return {ok:true,ties:[]};
 
-  var teamIds={},playerIds={};
+  var teamIds={},playerIds={},compRefs={};
   fixtures.forEach(function(f){
     if(f.team1_id)teamIds[f.team1_id]=true;
     if(f.team2_id)teamIds[f.team2_id]=true;
     if(f.player1_id)playerIds[f.player1_id]=true;
     if(f.player2_id)playerIds[f.player2_id]=true;
+    compRefs[f.comp_ref]=true;
   });
   var teamNames={};
   requireSb_(sbGet_('teams','select=team_id,team_name')).data.forEach(function(t){teamNames[t.team_id]=t.team_name;});
   var playerNames={};
   requireSb_(sbGet_('players','select=player_id,name')).data.forEach(function(p){playerNames[p.player_id]=p.name;});
+  var compVenue={};
+  var compList=Object.keys(compRefs);
+  var compRes=sbGet_('comps','select=comp_ref,venue_id&comp_ref=in.('+compList.map(encodeURIComponent).join(',')+')');
+  if(compRes.ok)compRes.data.forEach(function(c){compVenue[c.comp_ref]=c.venue_id||'';});
+  var venueById={};
+  requireSb_(sbGet_('venues','select=id,name,court_count')).data.forEach(function(v){venueById[v.id]=v;});
 
-  var fxIds=fixtures.map(function(f){return f.fixture_id;});
-  var allocByFixture={};
-  var allocRes=sbGet_('fixture_court_allocations','select=fixture_id,venue_id,court_number&fixture_id=in.('+fxIds.join(',')+')');
-  if(allocRes.ok)allocRes.data.forEach(function(a){allocByFixture[a.fixture_id]=a;});
-
-  var out=fixtures.map(function(f){
-    var a=allocByFixture[f.fixture_id];
-    return {
-      id:f.fixture_id, round:f.round, line:f.line, comp:f.comp_ref,
-      team1:teamNames[f.team1_id]||'', team2:teamNames[f.team2_id]||'',
-      player1:playerNames[f.player1_id]||'', player2:playerNames[f.player2_id]||'',
-      venueId:a?a.venue_id:'', court:a?a.court_number:''
-    };
+  var byTie={};
+  fixtures.forEach(function(f){
+    var m=String(f.fixture_id).match(/-M(\d+)$/); var tieNo=m?parseInt(m[1],10):1;
+    var key=f.comp_ref+'|'+f.round+'|'+tieNo;
+    if(!byTie[key]){
+      var venueId=compVenue[f.comp_ref]||'';
+      var venue=venueById[venueId];
+      byTie[key]={
+        comp:f.comp_ref, round:parseInt(f.round,10), tieNumber:tieNo,
+        team1:teamNames[f.team1_id]||'', team2:teamNames[f.team2_id]||'',
+        venueId:venueId, venueName:venue?venue.name:'', courtCount:venue?venue.court_count:0,
+        court:'', lines:[]
+      };
+    }
+    byTie[key].lines.push({fixtureId:f.fixture_id,line:parseInt(f.line,10)||0,player1:playerNames[f.player1_id]||'',player2:playerNames[f.player2_id]||''});
   });
-  out.sort(function(a,b){return (a.comp+'-'+a.round+'-'+a.line).localeCompare(b.comp+'-'+b.round+'-'+b.line);});
-  return {ok:true,fixtures:out};
+  var ties=Object.keys(byTie).map(function(k){var t=byTie[k];t.lines.sort(function(a,b){return a.line-b.line;});return t;});
+
+  // Filter allocations to just these comps, then match by (round,tie) -
+  // simpler and just as correct as a date-scoped query, since a tie's
+  // round+tie_number pairing is unique within its comp regardless of date.
+  var allocRes=sbGet_('tie_court_allocations','select=comp_ref,round,tie_number,court_number&comp_ref=in.('+compList.map(encodeURIComponent).join(',')+')');
+  if(allocRes.ok)allocRes.data.forEach(function(a){
+    var key=a.comp_ref+'|'+a.round+'|'+a.tie_number;
+    if(byTie[key])byTie[key].court=a.court_number;
+  });
+
+  ties.sort(function(a,b){return (a.comp+'-'+a.round+'-'+a.tieNumber).localeCompare(b.comp+'-'+b.round+'-'+b.tieNumber);});
+  return {ok:true,ties:ties};
 }
-function setCourtAllocation_(fixtureId,venueId,courtNumber){
-  fixtureId=String(fixtureId||'').trim();
-  venueId=String(venueId||'').trim();
-  courtNumber=parseInt(courtNumber,10);
-  if(!fixtureId||!venueId)throw new Error('Missing fixture or venue.');
+function setTieCourtAllocation_(compRef,round,tieNumber,courtNumber){
+  compRef=String(compRef||'').trim();
+  round=parseInt(round,10); tieNumber=parseInt(tieNumber,10); courtNumber=parseInt(courtNumber,10);
+  if(!compRef||!round||!tieNumber)throw new Error('Missing comp, round or tie.');
   if(!courtNumber||courtNumber<1)throw new Error('Enter a valid court number.');
+  var cRes=sbGet_('comps','select=venue_id&comp_ref=eq.'+encodeURIComponent(compRef));
+  if(!cRes.ok)return {ok:false,error:cRes.error};
+  var venueId=cRes.data.length?cRes.data[0].venue_id:null;
+  if(!venueId)throw new Error('Set this competition’s venue first, above.');
   var vRes=sbGet_('venues','select=court_count&id=eq.'+encodeURIComponent(venueId));
   if(!vRes.ok)return {ok:false,error:vRes.error};
   if(!vRes.data.length)throw new Error('Venue not found.');
   if(courtNumber>vRes.data[0].court_count)throw new Error('This venue only has '+vRes.data[0].court_count+' court(s).');
   var email=String(Session.getActiveUser().getEmail()||'');
-  var ins=sbUpsert_('fixture_court_allocations',{fixture_id:fixtureId,venue_id:venueId,court_number:courtNumber,allocated_by:email},'fixture_id');
+  var ins=sbUpsert_('tie_court_allocations',{comp_ref:compRef,round:round,tie_number:tieNumber,court_number:courtNumber,allocated_by:email},'comp_ref,round,tie_number');
   if(!ins.ok)return {ok:false,error:ins.error};
   return {ok:true};
 }
-function removeCourtAllocation_(fixtureId){
-  fixtureId=String(fixtureId||'').trim();
-  if(!fixtureId)throw new Error('Missing fixture id.');
-  var del=sbDelete_('fixture_court_allocations','fixture_id=eq.'+encodeURIComponent(fixtureId));
+function removeTieCourtAllocation_(compRef,round,tieNumber){
+  compRef=String(compRef||'').trim(); round=parseInt(round,10); tieNumber=parseInt(tieNumber,10);
+  if(!compRef||!round||!tieNumber)throw new Error('Missing comp, round or tie.');
+  var del=sbDelete_('tie_court_allocations','comp_ref=eq.'+encodeURIComponent(compRef)+'&round=eq.'+round+'&tie_number=eq.'+tieNumber);
   if(!del.ok)return {ok:false,error:del.error};
   return {ok:true};
+}
+// Spreads every tie in a comp across its venue's courts as evenly as
+// possible, shifting the starting court each round so a given team isn't
+// parked on the same (dis)advantageous court all season. Pass venueId to
+// (re)assign the comp's venue in the same call - this is what "onboarding
+// a comp" runs automatically; it's also safe to re-run any time (e.g.
+// after a late team joins) to reshuffle from scratch.
+function autoDistributeCourts_(compRef,venueId){
+  compRef=String(compRef||'').trim();
+  if(!compRef)throw new Error('Missing comp.');
+  venueId=String(venueId||'').trim();
+  if(venueId){
+    var upd=sbUpdate_('comps','comp_ref=eq.'+encodeURIComponent(compRef),{venue_id:venueId});
+    if(!upd.ok)return {ok:false,error:upd.error};
+  } else {
+    var cRes=sbGet_('comps','select=venue_id&comp_ref=eq.'+encodeURIComponent(compRef));
+    if(!cRes.ok)return {ok:false,error:cRes.error};
+    venueId=cRes.data.length?cRes.data[0].venue_id:null;
+    if(!venueId)throw new Error('This competition has no venue set yet.');
+  }
+  var vRes=sbGet_('venues','select=court_count&id=eq.'+encodeURIComponent(venueId));
+  if(!vRes.ok)return {ok:false,error:vRes.error};
+  if(!vRes.data.length)throw new Error('Venue not found.');
+  var courtCount=vRes.data[0].court_count;
+
+  var fxRes=sbGet_('fixtures','select=fixture_id,round&comp_ref=eq.'+encodeURIComponent(compRef));
+  if(!fxRes.ok)return {ok:false,error:fxRes.error};
+  var byRound={};
+  fxRes.data.forEach(function(f){
+    var r=parseInt(f.round,10); if(!r)return;
+    var m=String(f.fixture_id).match(/-M(\d+)$/); var tieNo=m?parseInt(m[1],10):1;
+    byRound[r]=byRound[r]||{}; byRound[r][tieNo]=true;
+  });
+  var email=String(Session.getActiveUser().getEmail()||'');
+  var rows=[];
+  Object.keys(byRound).map(Number).forEach(function(r){
+    var tieNos=Object.keys(byRound[r]).map(Number).sort(function(a,b){return a-b;});
+    tieNos.forEach(function(tieNo,idx){
+      rows.push({comp_ref:compRef, round:r, tie_number:tieNo,
+        court_number:((idx+(r-1))%courtCount)+1, allocated_by:email});
+    });
+  });
+  if(!rows.length)return {ok:true,allocated:0,venueId:venueId};
+  var ins=sbUpsert_('tie_court_allocations',rows,'comp_ref,round,tie_number');
+  if(!ins.ok)return {ok:false,error:ins.error};
+  return {ok:true,allocated:rows.length,venueId:venueId};
 }
 
 // Report which player names in MatchLog + Roster are (not) present in Contacts, so nothing is silently orphaned.

@@ -225,8 +225,11 @@
       <div class="row">
         <div style="min-width:160px"><label class="f">Start date (Round 1)</label>
           <input id="obStart" type="date"></div>
+        <div style="flex:1;min-width:220px"><label class="f">Venue</label>
+          <select id="obVenue" style="width:100%"><option value="">— set later —</option></select></div>
         <button class="cta" id="obGo" style="align-self:flex-end">Clone comp</button>
       </div>
+      <p class="hint">Choosing a venue now auto-allocates every tie across its courts, rotated evenly round to round so no team keeps the same court all season. Leave blank to allocate later, in Venues &amp; courts.</p>
       <label class="f">New competition output workbook (optional)</label><input id="obOutput" style="width:100%" placeholder="New workbook ID or URL"><p class="hint">The source competition's output is not copied. Configure a separate Retro Results workbook now or in Results before distributing.</p><div id="obResult" style="margin-top:12px"></div>
     </div>
   </section>
@@ -273,11 +276,23 @@
       <p id="venStatus" role="status" aria-live="polite"></p>
     </div>
     <div class="card">
+      <div class="eyebrow" style="margin-bottom:8px">Competition venue</div>
+      <div class="hint" style="margin-bottom:12px">A competition plays at one venue. Setting it here auto-allocates every tie (team v team, all its lines together) across the venue's courts as evenly as possible, rotating the starting court each round so no team is stuck on the same court all season. Safe to re-run any time to reshuffle from scratch.</div>
+      <div class="row">
+        <div style="flex:1;min-width:200px"><label class="f" for="cvComp">Competition</label>
+          <select id="cvComp" style="width:100%"><option value="">Loading comps…</option></select></div>
+        <div style="min-width:200px"><label class="f" for="cvVenue">Venue</label>
+          <select id="cvVenue" style="width:100%"></select></div>
+        <button class="cta" id="cvGo" style="align-self:flex-end">Set venue &amp; auto-distribute courts</button>
+      </div>
+      <p id="cvStatus" role="status" aria-live="polite"></p>
+    </div>
+    <div class="card">
       <div class="eyebrow" style="margin-bottom:8px">Court allocation</div>
-      <div class="hint" style="margin-bottom:12px">Assign each fixture on a date to a court ahead of time, so nobody has to negotiate on the night.</div>
+      <div class="hint" style="margin-bottom:12px">Court is allocated at the team-v-team (tie) level — every line of a tie shares one court. Fine-tune an individual tie here (e.g. after an overflow or a manual swap); the venue itself comes from the competition, set above.</div>
       <div class="row">
         <div style="min-width:160px"><label class="f" for="caDate">Date</label><input type="date" id="caDate"></div>
-        <button class="ghost" id="caLoad" style="align-self:flex-end">Load fixtures</button>
+        <button class="ghost" id="caLoad" style="align-self:flex-end">Load ties</button>
       </div>
       <div id="caList" style="margin-top:10px"></div>
     </div>
@@ -302,7 +317,8 @@ function switchTab(id){
   if(id==='onboard')renderOnboardTab();
   if(id==='admins')loadAdminAccess();
   if(id==='unavail')loadUnavailability();
-  if(id==='courts')loadVenues();
+  if(id==='courts'){loadVenues();loadCvComps_();}
+  if(id==='onboard')loadVenues();
 }
 var adminAccessBusy=false;
 function adminAccessState(busy){
@@ -411,6 +427,13 @@ var ALLVENUES=[];
 var vBusy=false;
 function vState(busy){ vBusy=busy; $('venAdd').disabled=busy; }
 function vError(err){ vState(false); $('venStatus').textContent=err&&err.message?err.message:String(err); }
+function fillVenueSelect_(sel,placeholder){
+  if(!sel)return;
+  var keep=sel.value;
+  sel.innerHTML='<option value="">'+esc(placeholder||'— none —')+'</option>'+
+    ALLVENUES.map(function(v){return '<option value="'+esc(v.id)+'">'+esc(v.name)+' ('+esc(v.court_count)+' courts)</option>';}).join('');
+  if(keep)sel.value=keep;
+}
 function loadVenues(){
   vState(true); $('venStatus').textContent='Loading…';
   google.script.run.withSuccessHandler(function(res){ vState(false); $('venStatus').textContent=''; renderVenues(res); }).withFailureHandler(vError).getVenues();
@@ -419,6 +442,8 @@ function renderVenues(res){
   var host=$('venuesList');
   if(!res||!res.ok){ host.innerHTML='<div class="banner warn">'+esc((res&&res.error)||'Could not load')+'</div>'; return; }
   ALLVENUES=res.venues||[];
+  fillVenueSelect_($('obVenue'),'— set later —');
+  fillVenueSelect_($('cvVenue'),'Choose a venue…');
   if(!ALLVENUES.length){ host.innerHTML='<div class="hint">No venues yet.</div>'; return; }
   host.innerHTML='<table><tr><th>Venue</th><th>Courts</th><th></th></tr>'+
     ALLVENUES.map(function(v){return '<tr><td>'+esc(v.name)+'</td><td>'+esc(v.court_count)+'</td>'+
@@ -455,46 +480,78 @@ $('venAdd').onclick=function(){
   }).withFailureHandler(vError).addVenue(name,courts);
 };
 
-/* ---------- court allocation ---------- */
+/* ---------- competition venue (sets comps.venue_id + auto-distributes) ---------- */
+var cvLoaded=false;
+function loadCvComps_(){
+  if(cvLoaded)return; cvLoaded=true;
+  google.script.run.withSuccessHandler(function(list){
+    var sel=$('cvComp');
+    if(!list||!list.length){ sel.innerHTML='<option value="">No comps found</option>'; return; }
+    sel.innerHTML='<option value="">Choose a competition…</option>'+
+      list.map(function(c){return '<option value="'+esc(c.code)+'">'+esc(c.name)+(c.active?'':' (inactive)')+'</option>';}).join('');
+  }).withFailureHandler(function(){ $('cvComp').innerHTML='<option value="">Couldn’t load comps</option>'; cvLoaded=false; })
+    .getAllComps();
+}
+$('cvGo').onclick=function(){
+  var comp=$('cvComp').value, venueId=$('cvVenue').value;
+  if(!comp)return alert('Choose a competition.');
+  if(!venueId)return alert('Choose a venue.');
+  if(!confirm('Set the venue for '+comp+' and auto-distribute courts for every tie? This overwrites any court allocations already made for this comp.'))return;
+  $('cvGo').disabled=true; $('cvGo').textContent='Working…'; $('cvStatus').textContent='';
+  google.script.run.withSuccessHandler(function(res){
+    $('cvGo').disabled=false; $('cvGo').textContent='Set venue & auto-distribute courts';
+    if(!res||!res.ok){ $('cvStatus').textContent=(res&&res.error)||'Failed.'; return; }
+    $('cvStatus').textContent='Venue set. '+(res.allocated||0)+' tie(s) allocated across courts.';
+    if($('caDate').value)$('caLoad').click();   // refresh the allocation table below if it's already showing this comp
+  }).withFailureHandler(function(e){
+    $('cvGo').disabled=false; $('cvGo').textContent='Set venue & auto-distribute courts';
+    $('cvStatus').textContent=e&&e.message?e.message:String(e);
+  }).autoDistributeCourts(comp,venueId);
+};
+
+/* ---------- court allocation (per tie) ---------- */
 (function(){var d=new Date();function p(n){return(n<10?'0':'')+n;}var today=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());if($('caDate'))$('caDate').value=today;})();
 var caBusy=false;
 function caState(busy){ caBusy=busy; $('caLoad').disabled=busy; }
 function caError(err){ caState(false); $('caList').innerHTML='<div class="banner warn">'+esc(err&&err.message?err.message:String(err))+'</div>'; }
 $('caLoad').onclick=function(){
   var date=$('caDate').value; if(!date)return alert('Pick a date.');
-  if(!ALLVENUES.length){ $('caList').innerHTML='<div class="hint">Add a venue first (see above).</div>'; return; }
   caState(true); $('caList').innerHTML='<div class="hint">Loading…</div>';
   google.script.run.withSuccessHandler(function(res){ caState(false); renderCourtAllocations(res); }).withFailureHandler(caError).getCourtAllocations(date);
 };
 function renderCourtAllocations(res){
   var host=$('caList');
   if(!res||!res.ok){ host.innerHTML='<div class="banner warn">'+esc((res&&res.error)||'Could not load')+'</div>'; return; }
-  var fixtures=res.fixtures||[];
-  if(!fixtures.length){ host.innerHTML='<div class="hint">No fixtures on this date.</div>'; return; }
-  var venueOpts=ALLVENUES.map(function(v){return '<option value="'+esc(v.id)+'">'+esc(v.name)+'</option>';}).join('');
-  host.innerHTML='<table><tr><th>Comp</th><th>R</th><th>L</th><th>Match</th><th>Venue</th><th>Court</th><th></th></tr>'+
-    fixtures.map(function(f){
-      var label=(f.team1&&f.team2)?(esc(f.team1)+' v '+esc(f.team2)+' — '):'';
-      return '<tr data-id="'+esc(f.id)+'"><td>'+esc(f.comp)+'</td><td>'+esc(f.round)+'</td><td>'+esc(f.line)+'</td>'+
-        '<td>'+label+esc(f.player1)+' v '+esc(f.player2)+'</td>'+
-        '<td><select class="caVenue"><option value="">—</option>'+venueOpts+'</select></td>'+
-        '<td><input type="number" min="1" step="1" class="caCourt" style="width:70px" value="'+esc(f.court||'')+'"></td>'+
-        '<td><button type="button" class="cta caSave">Save</button></td></tr>';
+  var ties=res.ties||[];
+  if(!ties.length){ host.innerHTML='<div class="hint">No fixtures on this date.</div>'; return; }
+  host.innerHTML='<table><tr><th>Comp</th><th>R</th><th>Tie</th><th>Lines</th><th>Venue</th><th>Court</th><th></th></tr>'+
+    ties.map(function(t){
+      var key=t.comp+'|'+t.round+'|'+t.tieNumber;
+      var teams=(t.team1&&t.team2)?(esc(t.team1)+' v '+esc(t.team2)):'—';
+      var linesTxt=t.lines.map(function(l){return 'L'+l.line+': '+esc(l.player1)+' v '+esc(l.player2);}).join('<br>');
+      var courtCell=t.venueId
+        ? '<input type="number" min="1" max="'+esc(t.courtCount)+'" step="1" class="caCourt" style="width:70px" value="'+esc(t.court||'')+'">'
+        : '<span class="hint">set venue above</span>';
+      var saveBtn=t.venueId ? '<button type="button" class="cta caSave">Save</button>' : '';
+      return '<tr data-key="'+esc(key)+'"><td>'+esc(t.comp)+'</td><td>'+esc(t.round)+'</td><td>#'+esc(t.tieNumber)+'</td>'+
+        '<td>'+teams+'<br><span class="hint">'+linesTxt+'</span></td>'+
+        '<td>'+esc(t.venueName||'—')+'</td>'+
+        '<td>'+courtCell+'</td><td>'+saveBtn+'</td></tr>';
     }).join('')+'</table>';
-  Array.prototype.forEach.call(host.querySelectorAll('tr[data-id]'),function(tr){
-    var f=fixtures.filter(function(x){return x.id===tr.getAttribute('data-id');})[0];
-    var vSel=tr.querySelector('.caVenue');
-    if(f&&f.venueId)vSel.value=f.venueId;
-    tr.querySelector('.caSave').onclick=function(){
-      var venueId=vSel.value, court=tr.querySelector('.caCourt').value;
-      if(!venueId||!court)return alert('Pick a venue and enter a court number.');
+  Array.prototype.forEach.call(host.querySelectorAll('tr[data-key]'),function(tr){
+    var t=ties.filter(function(x){return (x.comp+'|'+x.round+'|'+x.tieNumber)===tr.getAttribute('data-key');})[0];
+    var saveBtn=tr.querySelector('.caSave');
+    if(!t||!saveBtn)return;
+    saveBtn.onclick=function(){
+      var court=tr.querySelector('.caCourt').value;
+      if(!court)return alert('Enter a court number.');
       var btn=this; btn.disabled=true; btn.textContent='Saving…';
       google.script.run.withSuccessHandler(function(res2){
         btn.disabled=false; btn.textContent='Save';
         if(!res2||!res2.ok){ alert((res2&&res2.error)||'Could not save.'); return; }
         btn.textContent='Saved ✓';
       }).withFailureHandler(function(err){ btn.disabled=false; btn.textContent='Save'; alert(err&&err.message?err.message:String(err)); })
-        .setCourtAllocation(f.id,venueId,court);
+        .setTieCourtAllocation(t.comp,t.round,t.tieNumber,court);
     };
   });
 }
@@ -633,7 +690,7 @@ function renderOnboardTab(){
     .getAllComps();
 }
 $('obGo').onclick=function(){
-  var source=$('obSource').value, code=$('obCode').value.trim(), name=$('obName').value.trim(), start=$('obStart').value;
+  var source=$('obSource').value, code=$('obCode').value.trim(), name=$('obName').value.trim(), start=$('obStart').value, venueId=$('obVenue').value;
   if(!source){ alert('Choose a comp to clone from.'); return; }
   if(!code){ alert('Enter a code for the new comp.'); return; }
   if(!start){ alert('Pick a start date for Round 1.'); return; }
@@ -643,13 +700,14 @@ $('obGo').onclick=function(){
   google.script.run.withSuccessHandler(function(res){
     $('obGo').disabled=false; $('obGo').textContent='Clone comp';
     if(!res||!res.ok){ $('obResult').innerHTML='<div class="banner warn">'+esc((res&&res.error)||'Clone failed')+'</div>'; return; }
-    $('obResult').innerHTML='<div class="banner ok">Cloned '+res.teamsCloned+' team(s) and '+res.fixturesCloned+' fixture(s) across '+res.rounds+' round(s), '+esc(res.firstRoundDate)+' to '+esc(res.lastRoundDate)+'. Now go to <b>Comp Players</b> and enter the roster for '+esc(res.comp)+' — saving it will fill player names onto these fixtures.</div>';
+    var courtsMsg=venueId?(' '+res.courtsAllocated+' tie(s) had courts auto-allocated.'):'';
+    $('obResult').innerHTML='<div class="banner ok">Cloned '+res.teamsCloned+' team(s) and '+res.fixturesCloned+' fixture(s) across '+res.rounds+' round(s), '+esc(res.firstRoundDate)+' to '+esc(res.lastRoundDate)+'.'+courtsMsg+' Now go to <b>Comp Players</b> and enter the roster for '+esc(res.comp)+' — saving it will fill player names onto these fixtures.</div>';
     obLoaded=false; renderOnboardTab();   // refresh the source list so the new comp shows up too
     loadCompsDropdown(res.comp);          // and the main comp selector, pre-selected to the new comp
   }).withFailureHandler(function(e){
     $('obGo').disabled=false; $('obGo').textContent='Clone comp';
     $('obResult').innerHTML='<div class="banner warn">'+esc(e.message)+'</div>';
-  }).cloneComp(source, code, name, start, $('obOutput').value);
+  }).cloneComp(source, code, name, start, $('obOutput').value, venueId);
 };
 
 function renderRoster(res){
