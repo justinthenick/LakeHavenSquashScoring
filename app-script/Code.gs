@@ -106,6 +106,7 @@ function readFixtures_(date) {
   var rules={};requireSb_(sbGet_('comps','select=comp_ref,points_per_game,win_by_two,best_of,venue_id')).data.forEach(function(c){rules[c.comp_ref]=c;});
   var venueById={};requireSb_(sbGet_('venues','select=id,name,court_count')).data.forEach(function(v){venueById[v.id]=v;});
   var tieCourt={};requireSb_(sbGet_('tie_court_allocations','select=comp_ref,round,tie_number,court_number')).data.forEach(function(a){tieCourt[a.comp_ref+'|'+a.round+'|'+a.tie_number]=a.court_number;});
+  var fixtureOverride={};requireSb_(sbGet_('fixture_court_overrides','select=fixture_id,court_number')).data.forEach(function(o){fixtureOverride[o.fixture_id]=o.court_number;});
   return fixtures.map(function(f){
     var sched = '';
     if (f.scheduled) {
@@ -115,7 +116,10 @@ function readFixtures_(date) {
     var comp=rules[f.comp_ref]||{};
     var venue=comp.venue_id?venueById[comp.venue_id]:null;
     var tieNo=(String(f.fixture_id).match(/-M(\d+)$/)||[])[1];
-    var court=(venue&&tieNo)?(tieCourt[f.comp_ref+'|'+f.round+'|'+tieNo]||null):null;
+    // A per-fixture override (an overflow match corrected from the score
+    // screen) always wins over the tie's usual pre-allocated court.
+    var court=venue?(fixtureOverride[f.fixture_id]||(tieNo?tieCourt[f.comp_ref+'|'+f.round+'|'+tieNo]:null)||null):null;
+    var courtOverridden=!!(venue&&fixtureOverride[f.fixture_id]);
     return {
       status:statuses[f.fixture_id].status,result:statuses[f.fixture_id].result,actualPlayers:statuses[f.fixture_id].actualNames||[playerNames[statuses[f.fixture_id].actual1Id]||'',playerNames[statuses[f.fixture_id].actual2Id]||''],
       gamesP1:statuses[f.fixture_id].gamesP1,gamesP2:statuses[f.fixture_id].gamesP2,
@@ -126,7 +130,7 @@ function readFixtures_(date) {
       comp: f.comp_ref, round: f.round, line: f.line,
       team1: teamNames[f.team1_id] || '', team2: teamNames[f.team2_id] || '',
       event: f.comp_ref,
-      court: court, venueName: venue?venue.name:''
+      court: court, venueName: venue?venue.name:'', courtOverridden: courtOverridden
     };
   });
 }

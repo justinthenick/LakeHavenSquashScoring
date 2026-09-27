@@ -50,6 +50,8 @@ function doGet(e) {
       if (action === 'addPlayer') return out_(resolveOrAddPlayer_(e.parameter.name || ''), e);
       if (action === 'markArrival') return out_(markPlayerArrived(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
       if (action === 'setCourt') return out_(setFixtureCourt_(e.parameter.fixtureId, e.parameter.court), e);
+      if (action === 'overrideCourt') return out_(setFixtureCourtOverride_(e.parameter.fixtureId, e.parameter.court), e);
+      if (action === 'clearCourtOverride') return out_(clearFixtureCourtOverride_(e.parameter.fixtureId), e);
       if (action === 'clearArrival') return out_(clearArrival(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
       if (action === 'arrivalStatus') {
         var fixtureIds = e.parameter.fixtureIds ? JSON.parse(e.parameter.fixtureIds) : [];
@@ -1628,6 +1630,22 @@ function getCourtAllocations_(date){
   ties.sort(function(a,b){return (a.comp+'-'+a.round+'-'+a.tieNumber).localeCompare(b.comp+'-'+b.round+'-'+b.tieNumber);});
   return {ok:true,ties:ties};
 }
+// The calendar date a tie is played on - all of a tie's lines share one
+// scheduled date, so the first fixture found is authoritative. Used to
+// scope the "who else is on this court today" swap check below to the
+// same day, not just the same venue.
+function tieDate_(compRef,round){
+  var fxRes=sbGet_('fixtures','select=scheduled&comp_ref=eq.'+encodeURIComponent(compRef)+'&round=eq.'+round);
+  if(!fxRes.ok||!fxRes.data.length||!fxRes.data[0].scheduled)return null;
+  try{return Utilities.formatDate(new Date(fxRes.data[0].scheduled),'Australia/Sydney','yyyy-MM-dd');}
+  catch(e){return String(fxRes.data[0].scheduled).slice(0,10);}
+}
+// Pre-allocation edit (Comp Admin's tool, and the scorer app's fixture
+// LIST view) - moves the WHOLE tie, and if another tie at the same venue
+// is already using the target court on this same date, the two ties swap
+// courts rather than colliding. This is deliberately different from an
+// in-flight match's court correction (setFixtureCourtOverride_ below),
+// which affects only that one line and never touches another tie.
 function setTieCourtAllocation_(compRef,round,tieNumber,courtNumber){
   compRef=String(compRef||'').trim();
   round=parseInt(round,10); tieNumber=parseInt(tieNumber,10); courtNumber=parseInt(courtNumber,10);
@@ -1641,10 +1659,33 @@ function setTieCourtAllocation_(compRef,round,tieNumber,courtNumber){
   if(!vRes.ok)return {ok:false,error:vRes.error};
   if(!vRes.data.length)throw new Error('Venue not found.');
   if(courtNumber>vRes.data[0].court_count)throw new Error('This venue only has '+vRes.data[0].court_count+' court(s).');
+
+  var curRes=sbGet_('tie_court_allocations','select=court_number&comp_ref=eq.'+encodeURIComponent(compRef)+'&round=eq.'+round+'&tie_number=eq.'+tieNumber);
+  var priorCourt=(curRes.ok&&curRes.data.length)?curRes.data[0].court_number:null;
+
+  var swap=null;
+  if(priorCourt&&priorCourt!==courtNumber){
+    var date=tieDate_(compRef,round);
+    if(date){
+      var sameVenue=sbGet_('comps','select=comp_ref&venue_id=eq.'+encodeURIComponent(venueId));
+      var compList=sameVenue.ok?sameVenue.data.map(function(c){return c.comp_ref;}):[];
+      if(compList.length){
+        var occRes=sbGet_('tie_court_allocations','select=comp_ref,round,tie_number&court_number=eq.'+courtNumber+'&comp_ref=in.('+compList.map(encodeURIComponent).join(',')+')');
+        if(occRes.ok)occRes.data.forEach(function(a){
+          if(swap)return;
+          if(a.comp_ref===compRef&&a.round===round&&a.tie_number===tieNumber)return;
+          if(tieDate_(a.comp_ref,a.round)===date)swap={comp_ref:a.comp_ref,round:a.round,tie_number:a.tie_number};
+        });
+      }
+    }
+  }
+
   var email=String(Session.getActiveUser().getEmail()||'');
-  var ins=sbUpsert_('tie_court_allocations',{comp_ref:compRef,round:round,tie_number:tieNumber,court_number:courtNumber,allocated_by:email},'comp_ref,round,tie_number');
+  var rows=[{comp_ref:compRef,round:round,tie_number:tieNumber,court_number:courtNumber,allocated_by:email}];
+  if(swap)rows.push({comp_ref:swap.comp_ref,round:swap.round,tie_number:swap.tie_number,court_number:priorCourt,allocated_by:email});
+  var ins=sbUpsert_('tie_court_allocations',rows,'comp_ref,round,tie_number');
   if(!ins.ok)return {ok:false,error:ins.error};
-  return {ok:true};
+  return {ok:true,swapped:swap?{comp:swap.comp_ref,round:swap.round,tieNumber:swap.tie_number,court:priorCourt}:null};
 }
 function removeTieCourtAllocation_(compRef,round,tieNumber){
   compRef=String(compRef||'').trim(); round=parseInt(round,10); tieNumber=parseInt(tieNumber,10);
@@ -1653,15 +1694,42 @@ function removeTieCourtAllocation_(compRef,round,tieNumber){
   if(!del.ok)return {ok:false,error:del.error};
   return {ok:true};
 }
-// Scorer-facing override (club-code gated via doGet, not assertAdmin_ -
-// the scorer app is the one place an overflow fixture's actual court is
-// discovered). Moves the WHOLE tie, same as the admin tool, since every
-// line of a tie always shares one court.
+// Scorer-facing pre-allocation edit (club-code gated via doGet, not
+// assertAdmin_) for the fixture LIST view - moves the whole tie, with the
+// same swap behaviour as the admin tool (see setTieCourtAllocation_).
 function setFixtureCourt_(fixtureId,courtNumber){
   fixtureId=String(fixtureId||'').trim();
   var m=fixtureId.match(/^(.*)-R(\d+)-L(\d+)-M(\d+)$/);
   if(!m)throw new Error('Unrecognised fixture id.');
   return setTieCourtAllocation_(m[1],parseInt(m[2],10),parseInt(m[4],10),courtNumber);
+}
+// In-flight match correction (the score screen's court tag) - affects
+// ONLY this one fixture, never its tie siblings and never another tie's
+// allocation. This is the real-world overflow case: one rubber from this
+// tie spills onto a court that wasn't allocated to it, while the rest of
+// the tie carries on as planned. Stored separately from
+// tie_court_allocations so it can never cascade or get swapped.
+function setFixtureCourtOverride_(fixtureId,courtNumber){
+  fixtureId=String(fixtureId||'').trim();
+  courtNumber=parseInt(courtNumber,10);
+  if(!fixtureId)throw new Error('Missing fixture id.');
+  if(!courtNumber||courtNumber<1)throw new Error('Enter a valid court number.');
+  var venueId=venueForFixture_(fixtureId);
+  if(!venueId)throw new Error('Set this competition’s venue first.');
+  var vRes=sbGet_('venues','select=court_count&id=eq.'+encodeURIComponent(venueId));
+  if(!vRes.ok)return {ok:false,error:vRes.error};
+  if(!vRes.data.length)throw new Error('Venue not found.');
+  if(courtNumber>vRes.data[0].court_count)throw new Error('This venue only has '+vRes.data[0].court_count+' court(s).');
+  var ins=sbUpsert_('fixture_court_overrides',{fixture_id:fixtureId,court_number:courtNumber},'fixture_id');
+  if(!ins.ok)return {ok:false,error:ins.error};
+  return {ok:true};
+}
+function clearFixtureCourtOverride_(fixtureId){
+  fixtureId=String(fixtureId||'').trim();
+  if(!fixtureId)throw new Error('Missing fixture id.');
+  var del=sbDelete_('fixture_court_overrides','fixture_id=eq.'+encodeURIComponent(fixtureId));
+  if(!del.ok)return {ok:false,error:del.error};
+  return {ok:true};
 }
 // Spreads every tie in a comp across its venue's courts as evenly as
 // possible, shifting the starting court each round so a given team isn't
