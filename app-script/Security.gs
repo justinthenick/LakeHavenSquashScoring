@@ -92,6 +92,13 @@ function getContacts(){assertAdmin_();return getContacts_.apply(null,arguments);
 function getUnavailability(){assertAdmin_();return getUnavailability_.apply(null,arguments);}
 function addUnavailability(){assertAdmin_();return addUnavailability_.apply(null,arguments);}
 function removeUnavailability(){assertAdmin_();return removeUnavailability_.apply(null,arguments);}
+function getVenues(){assertAdmin_();return getVenues_.apply(null,arguments);}
+function addVenue(){assertAdmin_();return addVenue_.apply(null,arguments);}
+function updateVenue(){assertAdmin_();return updateVenue_.apply(null,arguments);}
+function removeVenue(){assertAdmin_();return removeVenue_.apply(null,arguments);}
+function getCourtAllocations(){assertAdmin_();return getCourtAllocations_.apply(null,arguments);}
+function setCourtAllocation(){assertAdmin_();return setCourtAllocation_.apply(null,arguments);}
+function removeCourtAllocation(){assertAdmin_();return removeCourtAllocation_.apply(null,arguments);}
 
 function getOutputConfig(){assertAdmin_();return getOutputConfig_.apply(null,arguments);}
 

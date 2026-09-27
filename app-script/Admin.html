@@ -145,6 +145,7 @@
       <button class="tab" data-tab="onboard">Onboard</button>
       <button class="tab" data-tab="subs">Subs</button>
       <button class="tab" data-tab="unavail">Player availability</button>
+      <button class="tab" data-tab="courts">Venues &amp; courts</button>
       <button class="tab" data-tab="admins">Administrators</button>
     </div>
   </div>
@@ -258,6 +259,29 @@
       <button class="ghost" id="uaRefresh" type="button" style="margin-top:10px">Refresh list</button>
     </div>
   </section>
+
+  <section class="tabpanel" id="tab-courts">
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:8px">Venues</div>
+      <div class="hint" style="margin-bottom:12px">A venue has a fixed number of courts. Add each venue you run competitions at once, here.</div>
+      <div id="venuesList"><div class="hint">Loading…</div></div>
+      <div class="row" style="margin-top:12px">
+        <div style="flex:1;min-width:200px"><label class="f" for="venName">Venue name</label><input id="venName" placeholder="e.g. Lakehaven Squash Centre"></div>
+        <div style="min-width:150px"><label class="f" for="venCourts">Number of courts</label><input id="venCourts" type="number" min="1" step="1"></div>
+        <button class="cta" id="venAdd" style="align-self:flex-end">Add venue</button>
+      </div>
+      <p id="venStatus" role="status" aria-live="polite"></p>
+    </div>
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:8px">Court allocation</div>
+      <div class="hint" style="margin-bottom:12px">Assign each fixture on a date to a court ahead of time, so nobody has to negotiate on the night.</div>
+      <div class="row">
+        <div style="min-width:160px"><label class="f" for="caDate">Date</label><input type="date" id="caDate"></div>
+        <button class="ghost" id="caLoad" style="align-self:flex-end">Load fixtures</button>
+      </div>
+      <div id="caList" style="margin-top:10px"></div>
+    </div>
+  </section>
 </main>
 <div id="rFloatSuggest" class="rSuggest"></div>
 <div id="drillBack" class="drillback"><div class="drillcard" id="drillCard"></div></div>
@@ -278,6 +302,7 @@ function switchTab(id){
   if(id==='onboard')renderOnboardTab();
   if(id==='admins')loadAdminAccess();
   if(id==='unavail')loadUnavailability();
+  if(id==='courts')loadVenues();
 }
 var adminAccessBusy=false;
 function adminAccessState(busy){
@@ -380,6 +405,100 @@ $('uaAdd').onclick=function(){
   }).withFailureHandler(uaError).addUnavailability(uaSelectedPlayerId,$('uaFrom').value,$('uaTo').value,$('uaReason').value.trim());
 };
 $('uaRefresh').onclick=loadUnavailability;
+
+/* ---------- Venues & courts tab ---------- */
+var ALLVENUES=[];
+var vBusy=false;
+function vState(busy){ vBusy=busy; $('venAdd').disabled=busy; }
+function vError(err){ vState(false); $('venStatus').textContent=err&&err.message?err.message:String(err); }
+function loadVenues(){
+  vState(true); $('venStatus').textContent='Loading…';
+  google.script.run.withSuccessHandler(function(res){ vState(false); $('venStatus').textContent=''; renderVenues(res); }).withFailureHandler(vError).getVenues();
+}
+function renderVenues(res){
+  var host=$('venuesList');
+  if(!res||!res.ok){ host.innerHTML='<div class="banner warn">'+esc((res&&res.error)||'Could not load')+'</div>'; return; }
+  ALLVENUES=res.venues||[];
+  if(!ALLVENUES.length){ host.innerHTML='<div class="hint">No venues yet.</div>'; return; }
+  host.innerHTML='<table><tr><th>Venue</th><th>Courts</th><th></th></tr>'+
+    ALLVENUES.map(function(v){return '<tr><td>'+esc(v.name)+'</td><td>'+esc(v.court_count)+'</td>'+
+      '<td><button type="button" class="ghost vEdit" data-id="'+esc(v.id)+'">Edit</button> '+
+      '<button type="button" class="ghost vDel" data-id="'+esc(v.id)+'">Remove</button></td></tr>';}).join('')+'</table>';
+  Array.prototype.forEach.call(host.querySelectorAll('.vEdit'),function(b){
+    b.onclick=function(){
+      var v=ALLVENUES.filter(function(x){return x.id===b.dataset.id;})[0]; if(!v)return;
+      var name=prompt('Venue name:',v.name); if(name===null)return;
+      var courts=prompt('Number of courts:',v.court_count); if(courts===null)return;
+      vState(true); $('venStatus').textContent='Saving…';
+      google.script.run.withSuccessHandler(function(res2){ vState(false); renderVenues(res2); }).withFailureHandler(vError).updateVenue(v.id,name.trim(),courts.trim());
+    };
+  });
+  Array.prototype.forEach.call(host.querySelectorAll('.vDel'),function(b){
+    b.onclick=function(){
+      if(!confirm('Remove this venue? This will fail if fixtures are still allocated to it.'))return;
+      vState(true); $('venStatus').textContent='Removing…';
+      google.script.run.withSuccessHandler(function(res2){ vState(false); $('venStatus').textContent=''; renderVenues(res2); }).withFailureHandler(vError).removeVenue(b.dataset.id);
+    };
+  });
+}
+$('venAdd').onclick=function(){
+  var name=$('venName').value.trim(), courts=$('venCourts').value;
+  if(!name)return alert('Enter a venue name.');
+  if(!courts||Number(courts)<1)return alert('Enter a valid number of courts.');
+  vState(true); $('venStatus').textContent='Saving…';
+  google.script.run.withSuccessHandler(function(res){
+    vState(false);
+    if(!res||!res.ok){ $('venStatus').textContent=(res&&res.error)||'Could not save.'; return; }
+    $('venName').value=''; $('venCourts').value='';
+    $('venStatus').textContent='Added.';
+    renderVenues(res);
+  }).withFailureHandler(vError).addVenue(name,courts);
+};
+
+/* ---------- court allocation ---------- */
+(function(){var d=new Date();function p(n){return(n<10?'0':'')+n;}var today=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());if($('caDate'))$('caDate').value=today;})();
+var caBusy=false;
+function caState(busy){ caBusy=busy; $('caLoad').disabled=busy; }
+function caError(err){ caState(false); $('caList').innerHTML='<div class="banner warn">'+esc(err&&err.message?err.message:String(err))+'</div>'; }
+$('caLoad').onclick=function(){
+  var date=$('caDate').value; if(!date)return alert('Pick a date.');
+  if(!ALLVENUES.length){ $('caList').innerHTML='<div class="hint">Add a venue first (see above).</div>'; return; }
+  caState(true); $('caList').innerHTML='<div class="hint">Loading…</div>';
+  google.script.run.withSuccessHandler(function(res){ caState(false); renderCourtAllocations(res); }).withFailureHandler(caError).getCourtAllocations(date);
+};
+function renderCourtAllocations(res){
+  var host=$('caList');
+  if(!res||!res.ok){ host.innerHTML='<div class="banner warn">'+esc((res&&res.error)||'Could not load')+'</div>'; return; }
+  var fixtures=res.fixtures||[];
+  if(!fixtures.length){ host.innerHTML='<div class="hint">No fixtures on this date.</div>'; return; }
+  var venueOpts=ALLVENUES.map(function(v){return '<option value="'+esc(v.id)+'">'+esc(v.name)+'</option>';}).join('');
+  host.innerHTML='<table><tr><th>Comp</th><th>R</th><th>L</th><th>Match</th><th>Venue</th><th>Court</th><th></th></tr>'+
+    fixtures.map(function(f){
+      var label=(f.team1&&f.team2)?(esc(f.team1)+' v '+esc(f.team2)+' — '):'';
+      return '<tr data-id="'+esc(f.id)+'"><td>'+esc(f.comp)+'</td><td>'+esc(f.round)+'</td><td>'+esc(f.line)+'</td>'+
+        '<td>'+label+esc(f.player1)+' v '+esc(f.player2)+'</td>'+
+        '<td><select class="caVenue"><option value="">—</option>'+venueOpts+'</select></td>'+
+        '<td><input type="number" min="1" step="1" class="caCourt" style="width:70px" value="'+esc(f.court||'')+'"></td>'+
+        '<td><button type="button" class="cta caSave">Save</button></td></tr>';
+    }).join('')+'</table>';
+  Array.prototype.forEach.call(host.querySelectorAll('tr[data-id]'),function(tr){
+    var f=fixtures.filter(function(x){return x.id===tr.getAttribute('data-id');})[0];
+    var vSel=tr.querySelector('.caVenue');
+    if(f&&f.venueId)vSel.value=f.venueId;
+    tr.querySelector('.caSave').onclick=function(){
+      var venueId=vSel.value, court=tr.querySelector('.caCourt').value;
+      if(!venueId||!court)return alert('Pick a venue and enter a court number.');
+      var btn=this; btn.disabled=true; btn.textContent='Saving…';
+      google.script.run.withSuccessHandler(function(res2){
+        btn.disabled=false; btn.textContent='Save';
+        if(!res2||!res2.ok){ alert((res2&&res2.error)||'Could not save.'); return; }
+        btn.textContent='Saved ✓';
+      }).withFailureHandler(function(err){ btn.disabled=false; btn.textContent='Save'; alert(err&&err.message?err.message:String(err)); })
+        .setCourtAllocation(f.id,venueId,court);
+    };
+  });
+}
+
 function renderDrawTab(){
   var comp=$('comp').value; if(!comp){ $('drawwrap').innerHTML='<div class="hint">Loading comps…</div>'; return; }
   $('drawwrap').innerHTML='<div class="hint">Loading rosters…</div>';

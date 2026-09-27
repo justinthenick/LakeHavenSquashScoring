@@ -1515,6 +1515,109 @@ function removeUnavailability_(id){
   return getUnavailability_();
 }
 
+/* ---------- venues + court pre-allocation (FEATURE_SPEC_venue_court_watch.md, Phase A) ---------- */
+function getVenues_(){
+  var res=sbGet_('venues','select=id,name,court_count&order=name.asc');
+  if(!res.ok)return {ok:false,error:res.error};
+  return {ok:true,venues:res.data};
+}
+function addVenue_(name,courtCount){
+  name=String(name||'').trim();
+  courtCount=parseInt(courtCount,10);
+  if(!name)throw new Error('Enter a venue name.');
+  if(!courtCount||courtCount<1)throw new Error('Enter a valid number of courts.');
+  var ins=sbUpsert_('venues',{name:name,court_count:courtCount},undefined);
+  if(!ins.ok)return {ok:false,error:ins.error};
+  return getVenues_();
+}
+function updateVenue_(id,name,courtCount){
+  id=String(id||'').trim();
+  name=String(name||'').trim();
+  courtCount=parseInt(courtCount,10);
+  if(!id)throw new Error('Missing venue id.');
+  if(!name)throw new Error('Enter a venue name.');
+  if(!courtCount||courtCount<1)throw new Error('Enter a valid number of courts.');
+  var upd=sbUpdate_('venues','id=eq.'+encodeURIComponent(id),{name:name,court_count:courtCount});
+  if(!upd.ok)return {ok:false,error:upd.error};
+  return getVenues_();
+}
+function removeVenue_(id){
+  id=String(id||'').trim();
+  if(!id)throw new Error('Missing venue id.');
+  var del=sbDelete_('venues','id=eq.'+encodeURIComponent(id));
+  if(!del.ok)return {ok:false,error:'Could not remove venue (it may still have fixtures allocated to it): '+del.error};
+  return getVenues_();
+}
+
+// Every not-scratched fixture on the given date, joined with any existing
+// court allocation - admin sees allocated AND unallocated fixtures together
+// so nothing gets missed when working through a round.
+function getCourtAllocations_(date){
+  date=String(date||'').trim();
+  if(!date)throw new Error('Select a date.');
+  var fxRes=sbGet_('fixtures','select=fixture_id,round,line,scheduled,comp_ref,team1_id,team2_id,player1_id,player2_id&player1_id=not.is.null');
+  if(!fxRes.ok)return {ok:false,error:fxRes.error};
+  var tz='Australia/Sydney';
+  var fixtures=fxRes.data.filter(function(f){
+    if(!f.scheduled)return false;
+    var sched;
+    try{sched=Utilities.formatDate(new Date(f.scheduled),tz,'yyyy-MM-dd');}catch(e){sched=String(f.scheduled).slice(0,10);}
+    return sched===date;
+  });
+  if(!fixtures.length)return {ok:true,fixtures:[]};
+
+  var teamIds={},playerIds={};
+  fixtures.forEach(function(f){
+    if(f.team1_id)teamIds[f.team1_id]=true;
+    if(f.team2_id)teamIds[f.team2_id]=true;
+    if(f.player1_id)playerIds[f.player1_id]=true;
+    if(f.player2_id)playerIds[f.player2_id]=true;
+  });
+  var teamNames={};
+  requireSb_(sbGet_('teams','select=team_id,team_name')).data.forEach(function(t){teamNames[t.team_id]=t.team_name;});
+  var playerNames={};
+  requireSb_(sbGet_('players','select=player_id,name')).data.forEach(function(p){playerNames[p.player_id]=p.name;});
+
+  var fxIds=fixtures.map(function(f){return f.fixture_id;});
+  var allocByFixture={};
+  var allocRes=sbGet_('fixture_court_allocations','select=fixture_id,venue_id,court_number&fixture_id=in.('+fxIds.join(',')+')');
+  if(allocRes.ok)allocRes.data.forEach(function(a){allocByFixture[a.fixture_id]=a;});
+
+  var out=fixtures.map(function(f){
+    var a=allocByFixture[f.fixture_id];
+    return {
+      id:f.fixture_id, round:f.round, line:f.line, comp:f.comp_ref,
+      team1:teamNames[f.team1_id]||'', team2:teamNames[f.team2_id]||'',
+      player1:playerNames[f.player1_id]||'', player2:playerNames[f.player2_id]||'',
+      venueId:a?a.venue_id:'', court:a?a.court_number:''
+    };
+  });
+  out.sort(function(a,b){return (a.comp+'-'+a.round+'-'+a.line).localeCompare(b.comp+'-'+b.round+'-'+b.line);});
+  return {ok:true,fixtures:out};
+}
+function setCourtAllocation_(fixtureId,venueId,courtNumber){
+  fixtureId=String(fixtureId||'').trim();
+  venueId=String(venueId||'').trim();
+  courtNumber=parseInt(courtNumber,10);
+  if(!fixtureId||!venueId)throw new Error('Missing fixture or venue.');
+  if(!courtNumber||courtNumber<1)throw new Error('Enter a valid court number.');
+  var vRes=sbGet_('venues','select=court_count&id=eq.'+encodeURIComponent(venueId));
+  if(!vRes.ok)return {ok:false,error:vRes.error};
+  if(!vRes.data.length)throw new Error('Venue not found.');
+  if(courtNumber>vRes.data[0].court_count)throw new Error('This venue only has '+vRes.data[0].court_count+' court(s).');
+  var email=String(Session.getActiveUser().getEmail()||'');
+  var ins=sbUpsert_('fixture_court_allocations',{fixture_id:fixtureId,venue_id:venueId,court_number:courtNumber,allocated_by:email},'fixture_id');
+  if(!ins.ok)return {ok:false,error:ins.error};
+  return {ok:true};
+}
+function removeCourtAllocation_(fixtureId){
+  fixtureId=String(fixtureId||'').trim();
+  if(!fixtureId)throw new Error('Missing fixture id.');
+  var del=sbDelete_('fixture_court_allocations','fixture_id=eq.'+encodeURIComponent(fixtureId));
+  if(!del.ok)return {ok:false,error:del.error};
+  return {ok:true};
+}
+
 // Report which player names in MatchLog + Roster are (not) present in Contacts, so nothing is silently orphaned.
 function reconcileNames_(){
   var ss=SpreadsheetApp.openById(prop_('MASTER_ID'));
