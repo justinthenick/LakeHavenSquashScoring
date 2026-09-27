@@ -224,7 +224,7 @@ function enterWatch_(){
   // immediate, so it gets its own much faster, much cheaper poll (just the
   // one cached blob, not a full fixtures fetch) once a live match is found.
   clearInterval(pollTimer);pollTimer=setInterval(poll_,8000);
-  clearInterval(liveTimer);liveTimer=setInterval(pollLive_,2500);
+  clearInterval(liveTimer);liveTimer=setInterval(pollLive_,1500);
   clearInterval(tickTimer);tickTimer=setInterval(tickClock_,1000);
 }
 function populateSwitcher_(){
@@ -306,11 +306,20 @@ function poll_(){
 // Fast cadence: just the one cached progress blob for whichever fixture
 // poll_() last identified as live - cheap enough to run often, so the
 // score/clock feel close to real-time between the slower full refreshes.
+var liveBusy=false;
 function pollLive_(){
-  if(!lastCurrent||lastCurrent.status!=='Underway')return;
-  callApi({action:'liveProgress',fixtureId:lastCurrent.id}).then(function(r){
-    if(r.progress){liveState=r.progress;liveState.fixtureId=lastCurrent.id;liveState.fx=lastCurrent;renderBody_(lastCurrent);}
-  }).catch(function(){});
+  // Guard against a slow response still in flight when the next tick fires
+  // (1.5s polling can otherwise overlap under a slow connection, and an
+  // older response landing after a newer one would visibly roll the score
+  // back for a moment).
+  if(!lastCurrent||lastCurrent.status!=='Underway'||liveBusy)return;
+  liveBusy=true;
+  var fx=lastCurrent;
+  callApi({action:'liveProgress',fixtureId:fx.id},false).then(function(r){
+    liveBusy=false;
+    if(fx!==lastCurrent)return;
+    if(r.progress){liveState=r.progress;liveState.fixtureId=fx.id;liveState.fx=fx;renderBody_(fx);}
+  }).catch(function(){liveBusy=false;});
 }
 function fmtT(sec){sec=Math.max(0,sec|0);var m=Math.floor(sec/60),s=sec%60;return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
 function tickClock_(){
@@ -369,17 +378,22 @@ function lineReadyAt_(fx){
   if(!ta||!tb)return null;
   return ta>tb?ta:tb;
 }
+// Numbers must match the scorer app's own queue exactly (played lines
+// occupy the first slots, the on-court match reserves the next one, then
+// ready lines number on from there) - it's the same real-world queue,
+// just viewed from a different screen.
 function queuePositions_(siblings,currentId,onCourtNow){
-  var ready=[];
+  var playedCount=0,ready=[];
   siblings.forEach(function(fx){
-    if(fx.status==='Played')return;
+    if(fx.status==='Played'){playedCount++;return;}
     if(onCourtNow&&fx.id===currentId)return;
     var at=lineReadyAt_(fx);
     if(at)ready.push({fx:fx,at:at});
   });
   ready.sort(function(a,b){return a.at<b.at?-1:a.at>b.at?1:0;});
+  var seq=playedCount+(onCourtNow?1:0);
   var out={};
-  ready.forEach(function(r,i){out[r.fx.id]=i+1;});
+  ready.forEach(function(r){seq++;out[r.fx.id]=seq;});
   return out;
 }
 function resultText_(fx){
@@ -427,6 +441,8 @@ function renderBody_(current){
 
   var onCourtNow=isLive||current.status==='Underway';
   var qpos=queuePositions_(siblings,current.id,onCourtNow);
+  var minQpos=null;
+  Object.keys(qpos).forEach(function(k){if(minQpos===null||qpos[k]<minQpos)minQpos=qpos[k];});
   var wrap=host.querySelector('.tiewrap');
   siblings.forEach(function(fx){
     var row=document.createElement('div');row.className='tierow';
@@ -445,9 +461,9 @@ function renderBody_(current){
     var isNow=onCourtNow&&fx.id===current.id;
     if(fx.status==='Played')tres.textContent=resultText_(fx);
     else if(isNow)tres.textContent='On court now';
-    else if(qpos[fx.id])tres.textContent=qpos[fx.id]===1?'Next up':'Queued #'+qpos[fx.id];
+    else if(qpos[fx.id])tres.textContent='Queued #'+qpos[fx.id]+(qpos[fx.id]===minQpos?' (next up)':'');
     else tres.textContent='Not yet played';
-    if(isNow||qpos[fx.id]===1){tres.classList.add('now');}
+    if(isNow||qpos[fx.id]===minQpos){tres.classList.add('now');}
     row.appendChild(tres);
     wrap.appendChild(row);
   });
