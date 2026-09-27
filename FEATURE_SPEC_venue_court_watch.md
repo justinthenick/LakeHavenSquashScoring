@@ -80,27 +80,39 @@ means the scorer app's code never has to branch on "am I in watch mode."
 app (not fully public), since it now includes a write action (marking
 arrivals), not just reads.
 
-**Entry:** pick a venue + court number (remembered per device thereafter,
-same convention as the scorer app's club code and court override).
+**Entry:** pick a venue + court number (remembered per device as the default
+next time, same convention as the scorer app's club code) — but this is a
+starting point, not a lock. A non-playing spectator is the primary audience
+for this page, and they'll want to check on more than one court over the
+course of an evening.
+
+**Court switcher:** a dropdown/selector is always visible on the live score
+display itself (not buried in a settings screen) showing the venue's other
+courts, so switching to check on a different match is a single tap from
+wherever you are on the page — no need to back out to an entry screen first.
+Switching just changes which court's data is being polled/displayed; it
+doesn't otherwise reset or navigate anywhere.
 
 **Layout, top to bottom** (mirrors the scorer app's structure so the two feel
 like the same product):
-1. Arrival/queue banner — the same "other fixtures, tap to mark arrived,
+1. Court switcher — see above. Sits with the header/court label, always
+   reachable.
+2. Arrival/queue banner — the same "other fixtures, tap to mark arrived,
    #N / played" bar used on the scorer app's score screen, scoped to whichever
    fixture is currently on this court (or the two teams involved, once known).
    Tapping a player pill marks arrival exactly as it does today — the one
-   interactive action this page has.
-2. Game/match timers — same clockbar as the scorer app (Game N, Games X–Y,
+   interactive action this page has (aside from the court switcher itself).
+3. Game/match timers — same clockbar as the scorer app (Game N, Games X–Y,
    Game clock, Match clock).
-3. Score panels — same visual layout as the scorer app (names, colours,
+4. Score panels — same visual layout as the scorer app (names, colours,
    points, serve indicator) but **not tappable** — no "tap = won rally", no
    undo, no change-server. Purely a live mirror of the score.
-4. Between games / between matches — the same summary screen shown on the
+5. Between games / between matches — the same summary screen shown on the
    scorer app between games (game-by-game table, tie table with arrivals and
    queue position) is shown here too, and is also what displays when no game
    is currently in progress on this court (i.e. the "idle" state is just this
    same summary screen, not a separate design).
-5. History — same as the scorer app's History drawer, read-only.
+6. History — same as the scorer app's History drawer, read-only.
 
 **Live updates:** polls the same progress/arrival/queue data the scorer app
 already publishes (`action:'progress'`, arrival status, sub nominations),
