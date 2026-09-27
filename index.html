@@ -798,6 +798,12 @@ function syncSelect(id,allLabel,values){
 var arrivalStatus = {};
 var unavailablePlayerIds = {}; // playerId -> true, for the CURRENTLY selected date
 var subNominations = {}; // 'fixtureId:originalPlayerId' -> subPlayerId, for the currently shown fixtures
+// One-shot: set right before the forced reload that follows a court swap,
+// consumed by the very next applyFixtureFilter() render so the "swapped
+// with X" confirmation appears in the SAME redraw as the pills actually
+// changing, rather than a blocking alert() the user has to dismiss first
+// while the list underneath is still showing the old courts.
+var courtSwapNote='';
 
 // Current player id for a slot, accounting for a nominated sub, plus whether
 // that player has arrived and when - "ready" means both slots have arrived.
@@ -875,8 +881,9 @@ function applyFixtureFilter(){
   });
   var note='';
   if(allFixtures.length && !onDate.length) note='No fixtures on '+date+'. Pick another date above.';
+  var swapNote=courtSwapNote; courtSwapNote='';
 
-  drawFixtures(shown, note, buildQueueNumberMap_(onDate));
+  drawFixtures(shown, note, buildQueueNumberMap_(onDate), swapNote);
 
   // Fetch arrival status in background (don't block fixture display), and
   // only redraw if it actually changed - a full rebuild every 30s poll is
@@ -927,8 +934,9 @@ function applyFixtureFilter(){
       });
   }
 }
-function drawFixtures(list,note,seqMap){
-  var host=$('fixtures');host.innerHTML=note?('<div class="hint">'+esc(note)+'</div>'):'';
+function drawFixtures(list,note,seqMap,swapNote){
+  var host=$('fixtures');
+  host.innerHTML=(swapNote?'<div class="banner ok">'+esc(swapNote)+'</div>':'')+(note?'<div class="hint">'+esc(note)+'</div>':'');
   if(!list.length){host.innerHTML+='<div class="hint">No matching fixtures.</div>';return;}
   list.forEach(function(fx){
     var row=document.createElement('div');row.className='fx';row.style.borderLeft='5px solid '+(fx.status==='Played'?'#238755':fx.status==='Underway'?'#d28a13':fx.status==='Scratched'?'#9c5665':'#8c99aa');
@@ -1219,7 +1227,7 @@ function playerNameById_(id){
 function setTieCourt_(fx,n,retryOnTimeout){
   if(retryOnTimeout===undefined)retryOnTimeout=true;
   callApi({action:'setCourt',fixtureId:fx.id,court:n}).then(function(res){
-    if(res&&res.swapped)alert('Swapped: R'+res.swapped.round+' tie #'+res.swapped.tieNumber+' in '+res.swapped.comp+' moved to Court '+res.swapped.court+'.');
+    if(res&&res.swapped)courtSwapNote='Swapped: R'+res.swapped.round+' tie #'+res.swapped.tieNumber+' in '+res.swapped.comp+' moved to Court '+res.swapped.court+'.';
     loadFixturesForDate(currentFxDate_(),true);
   }).catch(function(err){
     // Idempotent server-side (upsert keyed on comp/round/tie; a retry that
