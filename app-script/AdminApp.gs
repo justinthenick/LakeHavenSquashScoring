@@ -48,7 +48,8 @@ function doGet(e) {
       if (action === 'tie')      return out_(tieResults_(e.parameter.fixtureId || ''), e);
       if (action === 'players')  return out_({ ok:true, players: listPlayerNames_().map(function(p){return p.name;}), playerRecords:listPlayerNames_() }, e);
       if (action === 'addPlayer') return out_(resolveOrAddPlayer_(e.parameter.name || ''), e);
-      if (action === 'markArrival') return out_(markPlayerArrived(e.parameter.fixtureId, e.parameter.playerId, 'default-venue', e.parameter.date), e);
+      if (action === 'markArrival') return out_(markPlayerArrived(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
+      if (action === 'setCourt') return out_(setFixtureCourt_(e.parameter.fixtureId, e.parameter.court), e);
       if (action === 'clearArrival') return out_(clearArrival(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
       if (action === 'arrivalStatus') {
         var fixtureIds = e.parameter.fixtureIds ? JSON.parse(e.parameter.fixtureIds) : [];
@@ -1652,6 +1653,16 @@ function removeTieCourtAllocation_(compRef,round,tieNumber){
   if(!del.ok)return {ok:false,error:del.error};
   return {ok:true};
 }
+// Scorer-facing override (club-code gated via doGet, not assertAdmin_ -
+// the scorer app is the one place an overflow fixture's actual court is
+// discovered). Moves the WHOLE tie, same as the admin tool, since every
+// line of a tie always shares one court.
+function setFixtureCourt_(fixtureId,courtNumber){
+  fixtureId=String(fixtureId||'').trim();
+  var m=fixtureId.match(/^(.*)-R(\d+)-L(\d+)-M(\d+)$/);
+  if(!m)throw new Error('Unrecognised fixture id.');
+  return setTieCourtAllocation_(m[1],parseInt(m[2],10),parseInt(m[4],10),courtNumber);
+}
 // Spreads every tie in a comp across its venue's courts as evenly as
 // possible, shifting the starting court each round so a given team isn't
 // parked on the same (dis)advantageous court all season. Pass venueId to
@@ -2083,10 +2094,21 @@ function initializeRetroResults_(comp,workbookId){
 
 /* ========== PHASE 1: Player Arrival Tracking ========== */
 
-function markPlayerArrived(fixtureId,playerId,venueId,date){
-  if(!fixtureId||!playerId||!venueId||!date)throw new Error('Missing parameters');
+// Venue comes from the fixture's own comp (comps.venue_id), not a fixed
+// placeholder - real once a venue is set on the comp (see FEATURE_SPEC_
+// venue_court_watch.md), null in the rare case a comp hasn't been assigned
+// one yet.
+function venueForFixture_(fixtureId){
+  var fxRes=sbGet_('fixtures','select=comp_ref&fixture_id=eq.'+encodeURIComponent(fixtureId));
+  if(!fxRes.ok||!fxRes.data.length)return null;
+  var cRes=sbGet_('comps','select=venue_id&comp_ref=eq.'+encodeURIComponent(fxRes.data[0].comp_ref));
+  if(!cRes.ok||!cRes.data.length)return null;
+  return cRes.data[0].venue_id||null;
+}
+function markPlayerArrived(fixtureId,playerId,date){
+  if(!fixtureId||!playerId||!date)throw new Error('Missing parameters');
   var dateStr=String(date).split('T')[0];
-  var payload = {fixture_id:fixtureId,player_id:playerId,venue_id:venueId,date:dateStr,arrived_at:new Date().toISOString()};
+  var payload = {fixture_id:fixtureId,player_id:playerId,venue_id:venueForFixture_(fixtureId),date:dateStr,arrived_at:new Date().toISOString()};
   // on_conflict must name the (date,fixture_id,player_id) unique constraint -
   // without it, "merge-duplicates" only matches against the primary key (a
   // fresh random id every call), so marking the same arrival twice (e.g. a

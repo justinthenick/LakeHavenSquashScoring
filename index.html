@@ -376,6 +376,7 @@
     <span class="gamesTally"><span class="gt-l">Game <b id="gameNo">1</b></span><span class="gt-l">Games <b id="gamesLine">0–0</b></span></span>
     <span>Game <b id="gameClock">00:00</b></span>
     <span>Match <b id="matchClock">00:00</b></span>
+    <span id="courtTag" class="linklike" style="display:none"></span>
   </div>
   <div class="msgbar"><span id="msg" class="msg"></span></div>
   <div class="arena">
@@ -952,6 +953,7 @@ function drawFixtures(list,note,seqMap){
     if(fx.scheduled)bits.push(fx.scheduled);
     if(fx.round)bits.push('R'+fx.round+(fx.line?' L'+fx.line:''));
     if(fx.team1&&fx.team2)bits.push(fx.team1+' v '+fx.team2);
+    if(fx.court)bits.push('Court '+fx.court);
     var meta=bits.join(' · ');
     if(meta){var m=document.createElement('small');m.textContent=meta;main.appendChild(m);}
 
@@ -1354,7 +1356,25 @@ function paintTimers(){
 
 /* ---- render score screen ---- */
 var lastGames=0;
+function updateCourtTag_(){
+  var el=$('courtTag');
+  if(!activeFixture||!activeFixture.court){el.style.display='none';el.onclick=null;return;}
+  el.style.display='';
+  el.textContent='Court '+activeFixture.court;
+  el.onclick=function(){
+    var val=prompt('Court number for this match (every line of this tie moves with it):',activeFixture.court);
+    if(val===null)return;
+    var n=parseInt(val,10);
+    if(!n||n<1){alert('Enter a valid court number.');return;}
+    callApi({action:'setCourt',fixtureId:activeFixture.id,court:n}).then(function(){
+      activeFixture.court=n;
+      updateCourtTag_();
+      loadFixturesForDate(currentFxDate_(),true);
+    }).catch(function(err){alert('Could not update court: '+((err&&err.msg)||err));});
+  };
+}
 function renderScore(){
+  updateCourtTag_();
   // a game just completed -> stamp its end/duration, open the break
   if(M.games.length>lastGames){
     var gi=M.games.length-1,gt=M.timing.games[gi];

@@ -103,23 +103,30 @@ function readFixtures_(date) {
   requireSb_(sbGet_('players', 'select=player_id,name')).data.forEach(function(p){ playerNames[p.player_id] = p.name; });
   requireSb_(sbGet_('teams', 'select=team_id,team_name')).data.forEach(function(t){ teamNames[t.team_id] = t.team_name; });
 
-  var rules={};requireSb_(sbGet_('comps','select=comp_ref,points_per_game,win_by_two,best_of')).data.forEach(function(c){rules[c.comp_ref]=c;});
+  var rules={};requireSb_(sbGet_('comps','select=comp_ref,points_per_game,win_by_two,best_of,venue_id')).data.forEach(function(c){rules[c.comp_ref]=c;});
+  var venueById={};requireSb_(sbGet_('venues','select=id,name,court_count')).data.forEach(function(v){venueById[v.id]=v;});
+  var tieCourt={};requireSb_(sbGet_('tie_court_allocations','select=comp_ref,round,tie_number,court_number')).data.forEach(function(a){tieCourt[a.comp_ref+'|'+a.round+'|'+a.tie_number]=a.court_number;});
   return fixtures.map(function(f){
     var sched = '';
     if (f.scheduled) {
       try { sched = Utilities.formatDate(new Date(f.scheduled), tz, 'yyyy-MM-dd'); }
       catch (e) { sched = String(f.scheduled).slice(0, 10); }
     }
+    var comp=rules[f.comp_ref]||{};
+    var venue=comp.venue_id?venueById[comp.venue_id]:null;
+    var tieNo=(String(f.fixture_id).match(/-M(\d+)$/)||[])[1];
+    var court=(venue&&tieNo)?(tieCourt[f.comp_ref+'|'+f.round+'|'+tieNo]||null):null;
     return {
       status:statuses[f.fixture_id].status,result:statuses[f.fixture_id].result,actualPlayers:statuses[f.fixture_id].actualNames||[playerNames[statuses[f.fixture_id].actual1Id]||'',playerNames[statuses[f.fixture_id].actual2Id]||''],
       gamesP1:statuses[f.fixture_id].gamesP1,gamesP2:statuses[f.fixture_id].gamesP2,
       id: f.fixture_id, player1Id:f.player1_id, player2Id:f.player2_id,
-      pointsToWin:(rules[f.comp_ref]||{}).points_per_game||15,winByTwo:!!(rules[f.comp_ref]||{}).win_by_two,bestOf:(rules[f.comp_ref]||{}).best_of||5,
+      pointsToWin:comp.points_per_game||15,winByTwo:!!comp.win_by_two,bestOf:comp.best_of||5,
       player1: playerNames[f.player1_id] || '', player2: playerNames[f.player2_id] || '',
       scheduled: sched,
       comp: f.comp_ref, round: f.round, line: f.line,
       team1: teamNames[f.team1_id] || '', team2: teamNames[f.team2_id] || '',
-      event: f.comp_ref
+      event: f.comp_ref,
+      court: court, venueName: venue?venue.name:''
     };
   });
 }
