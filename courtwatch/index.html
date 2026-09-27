@@ -132,30 +132,45 @@ function jsonp(url){
     document.head.appendChild(s);
   });
 }
-function callApi(params){
+// Apps Script's first request after being idle spins up a fresh execution
+// environment and can take much longer than normal - every read here is
+// idempotent, so a timeout (very likely just that cold start, not a real
+// failure) is retried once before giving up, same as the scorer app.
+function callApi(params,retryOnTimeout){
   if(!cfg.token)return Promise.reject({reason:'auth',msg:'Enter the club access code.'});
+  if(retryOnTimeout===undefined)retryOnTimeout=true;
   var qs='secret='+encodeURIComponent(cfg.token);
   for(var k in params){if(params.hasOwnProperty(k))qs+='&'+k+'='+encodeURIComponent(params[k]);}
   return jsonp(APPS_SCRIPT_URL+'?'+qs).then(function(d){
     if(!d||d.ok===false)throw{reason:(d&&/access code|Scorer access/.test(d.error||''))?'auth':'server',msg:(d&&d.error)||'rejected'};
     return d;
+  }).catch(function(err){
+    if(retryOnTimeout&&err&&err.reason==='timeout')return callApi(params,false);
+    throw err;
   });
 }
 function localDate(){var d=new Date();function p(n){return(n<10?'0':'')+n;}return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());}
 function show(id){['setup','watch'].forEach(function(s){$(s).classList.toggle('active',s===id);});}
 
 /* ---------- onboarding: club code, then venue/court ---------- */
-$('codeGo').onclick=function(){
-  var code=$('codeInput').value.trim();
-  if(!/^[A-Za-z0-9]{4}$/.test(code)&&code.length<16){$('codeStatus').textContent='Enter four letters or digits.';return;}
-  $('codeGo').disabled=true;$('codeStatus').textContent='Connecting…';
+function connectWithCode_(code,retryOnTimeout){
+  if(retryOnTimeout===undefined)retryOnTimeout=true;
   jsonp(APPS_SCRIPT_URL+'?action=authorizeDevice&code='+encodeURIComponent(code)).then(function(d){
     $('codeGo').disabled=false;
     if(!d||!d.ok||!d.token){$('codeStatus').textContent=(d&&d.error)||'Unable to connect.';return;}
     cfg.token=d.token;saveCfg_();
     $('codeStep').style.display='none';$('pickStep').style.display='';
     loadVenuesForPicker_();
-  }).catch(function(e){$('codeGo').disabled=false;$('codeStatus').textContent=e.message||e.msg||'Connection failed.';});
+  }).catch(function(e){
+    if(retryOnTimeout&&e&&e.reason==='timeout'){connectWithCode_(code,false);return;}
+    $('codeGo').disabled=false;$('codeStatus').textContent=e.message||e.msg||'Connection failed.';
+  });
+}
+$('codeGo').onclick=function(){
+  var code=$('codeInput').value.trim();
+  if(!/^[A-Za-z0-9]{4}$/.test(code)&&code.length<16){$('codeStatus').textContent='Enter four letters or digits.';return;}
+  $('codeGo').disabled=true;$('codeStatus').textContent='Connecting…';
+  connectWithCode_(code);
 };
 var ALLVENUES=[];
 function loadVenuesForPicker_(){
