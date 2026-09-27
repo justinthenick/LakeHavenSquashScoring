@@ -1671,11 +1671,30 @@ function setTieCourtAllocation_(compRef,round,tieNumber,courtNumber){
       var compList=sameVenue.ok?sameVenue.data.map(function(c){return c.comp_ref;}):[];
       if(compList.length){
         var occRes=sbGet_('tie_court_allocations','select=comp_ref,round,tie_number&court_number=eq.'+courtNumber+'&comp_ref=in.('+compList.map(encodeURIComponent).join(',')+')');
-        if(occRes.ok)occRes.data.forEach(function(a){
-          if(swap)return;
-          if(a.comp_ref===compRef&&a.round===round&&a.tie_number===tieNumber)return;
-          if(tieDate_(a.comp_ref,a.round)===date)swap={comp_ref:a.comp_ref,round:a.round,tie_number:a.tie_number};
+        var candidates=(occRes.ok?occRes.data:[]).filter(function(a){
+          return !(a.comp_ref===compRef&&a.round===round&&a.tie_number===tieNumber);
         });
+        // One batched fixtures query covering every candidate's comp,
+        // instead of a tieDate_ call per candidate - with courts reused
+        // every round all season, that loop was one network round trip
+        // PER HISTORICAL ALLOCATION EVER MADE on this court, which is
+        // what made this action agonisingly slow on an established comp.
+        if(candidates.length){
+          var candComps=uniq_(candidates.map(function(c){return c.comp_ref;}));
+          var fxRes=sbGet_('fixtures','select=comp_ref,round,scheduled&comp_ref=in.('+candComps.map(encodeURIComponent).join(',')+')');
+          var roundDate={};
+          if(fxRes.ok)fxRes.data.forEach(function(f){
+            if(!f.scheduled)return;
+            var key=f.comp_ref+'|'+f.round;
+            if(roundDate[key])return;
+            try{roundDate[key]=Utilities.formatDate(new Date(f.scheduled),'Australia/Sydney','yyyy-MM-dd');}
+            catch(e){roundDate[key]=String(f.scheduled).slice(0,10);}
+          });
+          for(var i=0;i<candidates.length&&!swap;i++){
+            var c=candidates[i];
+            if(roundDate[c.comp_ref+'|'+c.round]===date)swap=c;
+          }
+        }
       }
     }
   }
@@ -1685,7 +1704,25 @@ function setTieCourtAllocation_(compRef,round,tieNumber,courtNumber){
   if(swap)rows.push({comp_ref:swap.comp_ref,round:swap.round,tie_number:swap.tie_number,court_number:priorCourt,allocated_by:email});
   var ins=sbUpsert_('tie_court_allocations',rows,'comp_ref,round,tie_number');
   if(!ins.ok)return {ok:false,error:ins.error};
+
+  // A pre-allocation edit is a deliberate top-down decision about the
+  // whole tie - any leftover per-fixture override from an earlier
+  // overflow correction on one of its lines (or the swap partner's)
+  // would otherwise keep silently overriding this new court forever.
+  clearTieCourtOverrides_(compRef,round,tieNumber);
+  if(swap)clearTieCourtOverrides_(swap.comp_ref,swap.round,swap.tie_number);
+
   return {ok:true,swapped:swap?{comp:swap.comp_ref,round:swap.round,tieNumber:swap.tie_number,court:priorCourt}:null};
+}
+function clearTieCourtOverrides_(compRef,round,tieNumber){
+  var fxRes=sbGet_('fixtures','select=fixture_id&comp_ref=eq.'+encodeURIComponent(compRef)+'&round=eq.'+round);
+  if(!fxRes.ok)return;
+  var ids=fxRes.data.map(function(f){return f.fixture_id;}).filter(function(id){
+    var m=String(id).match(/-M(\d+)$/);
+    return m&&parseInt(m[1],10)===tieNumber;
+  });
+  if(!ids.length)return;
+  sbDelete_('fixture_court_overrides','fixture_id=in.('+ids.map(encodeURIComponent).join(',')+')');
 }
 function removeTieCourtAllocation_(compRef,round,tieNumber){
   compRef=String(compRef||'').trim(); round=parseInt(round,10); tieNumber=parseInt(tieNumber,10);
