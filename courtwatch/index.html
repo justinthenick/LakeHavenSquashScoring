@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#1b2733">
+<title>Court Watch — Lake Haven Squash</title>
+<style>
+  :root{
+    --court:#e9edf0; --ink:#14202b; --muted:#5d6b78; --line:#c7cfd6; --card:#f7f9fb;
+    --yellow:#f2c200; --danger:#c0392b; --ok:#238755;
+    --p1:#e6913c; --p2:#6b52ae;
+    --safe-top:env(safe-area-inset-top,0px); --safe-bot:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{font-family:ui-rounded,"SF Pro Rounded",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:var(--court);color:var(--ink);overscroll-behavior:none;-webkit-user-select:none;user-select:none;
+    min-height:100vh;min-height:100dvh;padding-top:var(--safe-top);padding-bottom:var(--safe-bot)}
+  h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.02em}
+  button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+  .tnum{font-variant-numeric:tabular-nums}
+  .screen{display:none;flex-direction:column;min-height:100vh;min-height:100dvh}
+  .screen.active{display:flex}
+  .pad{padding:18px}
+  .hint{color:var(--muted);font-size:14px;padding:10px 2px}
+  .banner{border-radius:12px;padding:10px 14px;font-weight:700;font-size:14px;margin:10px 0}
+  .banner.ok{background:#dff2e5;color:#1c6b3d}
+  .banner.warn{background:#fde3e0;color:#8f2c1f}
+  label.field{display:block;margin:16px 0 6px;font-size:13px;font-weight:700;color:var(--muted)}
+  input:not([type=checkbox]),select{width:100%;padding:15px 16px;font-size:17px;font-weight:600;
+    border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--ink);appearance:none}
+  select{background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' stroke='%235d6b78' stroke-width='2.5'><path d='M5 8l5 5 5-5'/></svg>");
+    background-repeat:no-repeat;background-position:right 14px center}
+  .cta{width:100%;padding:16px;border-radius:14px;background:var(--ink);color:#fff;font-weight:800;font-size:16px;margin-top:16px}
+  .cta:disabled{opacity:.5}
+
+  /* ---- always-visible court switcher ---- */
+  .cwbar{display:flex;align-items:center;background:var(--card);border-bottom:1px solid var(--line);
+    padding:10px 14px;gap:0}
+  .cwbar>*:not(:last-child){margin-right:10px}
+  .cwbar select{padding:8px 30px 8px 10px;font-size:14px;font-weight:700;border-radius:10px;width:auto}
+  .cwbar .spacer{flex:1}
+  .cwbar button{font-size:12px;font-weight:700;color:var(--muted);text-decoration:underline;padding:6px}
+
+  .clockbar{display:flex;align-items:center;justify-content:center;background:var(--card);
+    border-bottom:1px solid var(--line);padding:10px 12px;font-size:15px}
+  .clockbar>*:not(:last-child){margin-right:20px}
+  .clockbar b{font-size:19px}
+  .clockbar .gt{padding-right:14px;border-right:2px solid var(--line)}
+
+  .arena{flex:1;display:flex;min-height:220px}
+  .panel{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:14px 10px;position:relative;color:#fff}
+  .panel.p0{background:var(--p1)}
+  .panel.p1{background:var(--p2)}
+  .pname{font-size:18px;font-weight:800;text-align:center;margin-bottom:6px;max-width:100%;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pts{font-size:min(22vw,140px);font-weight:900;line-height:1}
+  .serveslot{height:24px;margin-bottom:4px}
+  .serve{display:none;font-size:12px;font-weight:800;background:rgba(255,255,255,.25);border-radius:8px;padding:2px 10px}
+  .serve.show{display:inline-block}
+
+  .idle{flex:1;display:flex;align-items:center;justify-content:center;padding:30px 16px;text-align:center;color:var(--muted);font-size:15px}
+
+  .tiewrap{padding:14px}
+  .tiehead{font-size:15px;font-weight:800;margin-bottom:8px}
+  .tierow{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .tierow .tn{width:26px;flex:none;font-weight:800;color:var(--muted)}
+  .tierow .tp{flex:1;min-width:0}
+  .tierow .tres{flex:none;font-size:12px;color:var(--muted);text-align:right;max-width:44%}
+  .arrive-pill{font:inherit;font-weight:700;border:1px solid var(--line);background:#fff;color:inherit;
+    border-radius:20px;padding:3px 10px;margin:0 2px 4px 0;font-size:13px}
+  .arrive-pill.arrived{background:#dff2e5;border-color:#238755;color:#1c6b3d}
+  .arrive-pill.absent{background:#fff7e6;border:1px dashed #b45309;color:#92400e}
+  .arrive-pill:disabled{opacity:.55}
+</style>
+</head>
+<body>
+
+<!-- ================= SETTINGS / ONBOARDING ================= -->
+<section id="setup" class="screen active">
+  <div class="pad">
+    <h1>Court Watch</h1>
+    <p class="hint">Live scores for Lake Haven Squash. Enter the club code once per device, then pick a venue and court to watch.</p>
+    <div id="codeStep">
+      <label class="field">Club access code</label>
+      <input id="codeInput" placeholder="4-character code" autocomplete="off">
+      <button class="cta" id="codeGo">Connect</button>
+      <p id="codeStatus" class="hint"></p>
+    </div>
+    <div id="pickStep" style="display:none">
+      <label class="field">Venue</label>
+      <select id="venueSel"></select>
+      <label class="field">Court</label>
+      <select id="courtSel"></select>
+      <button class="cta" id="pickGo">Watch this court</button>
+      <p id="pickStatus" class="hint"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= WATCH ================= -->
+<section id="watch" class="screen">
+  <div class="cwbar">
+    <select id="cwVenue"></select>
+    <select id="cwCourt"></select>
+    <span class="spacer"></span>
+    <button id="cwSettings">Change club code</button>
+  </div>
+  <div id="cwBody"></div>
+</section>
+
+<script>
+function $(id){return document.getElementById(id);}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+
+var APPS_SCRIPT_URL="https://script.google.com/macros/s/AKfycbxc2oX1KfkEteMsvhjyrT0a3w8LLXtY-EhTwHwy4eTO4T4JlSDajaUKrxFzbt6-DXE/exec";
+var cfg={token:'',venueId:'',venueName:'',court:'',courtCount:0};
+try{var saved=JSON.parse(localStorage.getItem('cw_config')||'{}');cfg.token=saved.token||'';cfg.venueId=saved.venueId||'';cfg.venueName=saved.venueName||'';cfg.court=saved.court||'';cfg.courtCount=saved.courtCount||0;}catch(e){}
+function saveCfg_(){try{localStorage.setItem('cw_config',JSON.stringify(cfg));}catch(e){}}
+
+function jsonp(url){
+  return new Promise(function(resolve,reject){
+    var cb='__cw_'+Date.now()+Math.floor(Math.random()*1e4);
+    var s=document.createElement('script');
+    var timer=setTimeout(function(){cleanup();reject({reason:'timeout'});},20000);
+    function cleanup(){clearTimeout(timer);try{delete window[cb];}catch(e){window[cb]=undefined;}if(s.parentNode)s.parentNode.removeChild(s);}
+    window[cb]=function(data){cleanup();resolve(data);};
+    s.onerror=function(){cleanup();reject({reason:'network'});};
+    s.src=url+(url.indexOf('?')>-1?'&':'?')+'callback='+cb;
+    document.head.appendChild(s);
+  });
+}
+function callApi(params){
+  if(!cfg.token)return Promise.reject({reason:'auth',msg:'Enter the club access code.'});
+  var qs='secret='+encodeURIComponent(cfg.token);
+  for(var k in params){if(params.hasOwnProperty(k))qs+='&'+k+'='+encodeURIComponent(params[k]);}
+  return jsonp(APPS_SCRIPT_URL+'?'+qs).then(function(d){
+    if(!d||d.ok===false)throw{reason:(d&&/access code|Scorer access/.test(d.error||''))?'auth':'server',msg:(d&&d.error)||'rejected'};
+    return d;
+  });
+}
+function localDate(){var d=new Date();function p(n){return(n<10?'0':'')+n;}return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());}
+function show(id){['setup','watch'].forEach(function(s){$(s).classList.toggle('active',s===id);});}
+
+/* ---------- onboarding: club code, then venue/court ---------- */
+$('codeGo').onclick=function(){
+  var code=$('codeInput').value.trim();
+  if(!/^[A-Za-z0-9]{4}$/.test(code)&&code.length<16){$('codeStatus').textContent='Enter four letters or digits.';return;}
+  $('codeGo').disabled=true;$('codeStatus').textContent='Connecting…';
+  jsonp(APPS_SCRIPT_URL+'?action=authorizeDevice&code='+encodeURIComponent(code)).then(function(d){
+    $('codeGo').disabled=false;
+    if(!d||!d.ok||!d.token){$('codeStatus').textContent=(d&&d.error)||'Unable to connect.';return;}
+    cfg.token=d.token;saveCfg_();
+    $('codeStep').style.display='none';$('pickStep').style.display='';
+    loadVenuesForPicker_();
+  }).catch(function(e){$('codeGo').disabled=false;$('codeStatus').textContent=e.message||e.msg||'Connection failed.';});
+};
+var ALLVENUES=[];
+function loadVenuesForPicker_(){
+  $('pickStatus').textContent='Loading venues…';
+  callApi({action:'venues'}).then(function(res){
+    ALLVENUES=res.venues||[];
+    $('pickStatus').textContent='';
+    if(!ALLVENUES.length){$('pickStatus').textContent='No venues configured yet — ask the admin to add one.';return;}
+    $('venueSel').innerHTML=ALLVENUES.map(function(v){return '<option value="'+esc(v.id)+'">'+esc(v.name)+'</option>';}).join('');
+    if(cfg.venueId)$('venueSel').value=cfg.venueId;
+    fillCourtSel_($('courtSel'));
+  }).catch(function(e){$('pickStatus').textContent=e.msg||e.reason||'Could not load venues.';});
+}
+function fillCourtSel_(sel){
+  var v=ALLVENUES.filter(function(x){return x.id===$('venueSel').value;})[0];
+  var n=v?v.court_count:0;
+  var opts=[];for(var i=1;i<=n;i++)opts.push('<option value="'+i+'">Court '+i+'</option>');
+  sel.innerHTML=opts.join('');
+  if(cfg.court)sel.value=cfg.court;
+}
+$('venueSel').onchange=function(){fillCourtSel_($('courtSel'));};
+$('pickGo').onclick=function(){
+  var v=ALLVENUES.filter(function(x){return x.id===$('venueSel').value;})[0];
+  if(!v||!$('courtSel').value){$('pickStatus').textContent='Pick a venue and court.';return;}
+  cfg.venueId=v.id;cfg.venueName=v.name;cfg.courtCount=v.court_count;cfg.court=$('courtSel').value;
+  saveCfg_();
+  enterWatch_();
+};
+$('cwSettings').onclick=function(){
+  cfg.token='';saveCfg_();
+  $('codeStep').style.display='';$('pickStep').style.display='none';$('codeInput').value='';$('codeStatus').textContent='';
+  show('setup');
+};
+
+/* ---------- watch screen ---------- */
+function enterWatch_(){
+  show('watch');
+  populateSwitcher_();
+  poll_();
+  clearInterval(pollTimer);pollTimer=setInterval(poll_,8000);
+  clearInterval(tickTimer);tickTimer=setInterval(tickClock_,1000);
+}
+function populateSwitcher_(){
+  $('cwVenue').innerHTML=ALLVENUES.length?ALLVENUES.map(function(v){return '<option value="'+esc(v.id)+'">'+esc(v.name)+'</option>';}).join(''):'<option>'+esc(cfg.venueName)+'</option>';
+  if(cfg.venueId)$('cwVenue').value=cfg.venueId;
+  var v=ALLVENUES.filter(function(x){return x.id===cfg.venueId;})[0];
+  var n=v?v.court_count:cfg.courtCount;
+  var opts=[];for(var i=1;i<=n;i++)opts.push('<option value="'+i+'">Court '+i+'</option>');
+  $('cwCourt').innerHTML=opts.join('');
+  $('cwCourt').value=cfg.court;
+}
+$('cwVenue').onchange=function(){
+  var v=ALLVENUES.filter(function(x){return x.id===$('cwVenue').value;})[0];
+  if(!v)return;
+  cfg.venueId=v.id;cfg.venueName=v.name;cfg.courtCount=v.court_count;cfg.court='1';
+  saveCfg_();populateSwitcher_();poll_();
+};
+$('cwCourt').onchange=function(){cfg.court=$('cwCourt').value;saveCfg_();poll_();};
+
+var pollTimer=null,tickTimer=null;
+var allFixtures=[],arrivalStatus={},subNominations={},unavailableIds={};
+var liveState=null; // {games,points,players,colors,server,side,gameSec,matchSec,breakActive,gameNo,updated,fixtureId}
+var lastFixtureId=null;
+
+function tieNumOf_(id){var m=String(id).match(/-M(\d+)$/);return m?m[1]:'1';}
+function pickCourtFixture_(list){
+  if(!list.length)return null;
+  var underway=list.filter(function(f){return f.status==='Underway';});
+  if(underway.length)return underway[0];
+  var ready=list.filter(function(f){return f.status!=='Played'&&f.status!=='Scratched';});
+  ready.sort(function(a,b){return (Number(a.round)-Number(b.round))||((a.line||0)-(b.line||0));});
+  if(ready.length)return ready[0];
+  var played=list.filter(function(f){return f.status==='Played';});
+  played.sort(function(a,b){return (Number(b.round)-Number(a.round))||((b.line||0)-(a.line||0));});
+  return played[0]||null;
+}
+function tieSiblings_(all,fx){
+  return all.filter(function(f){return f.comp===fx.comp&&String(f.round)===String(fx.round)&&tieNumOf_(f.id)===tieNumOf_(fx.id);})
+    .sort(function(a,b){return (a.line||0)-(b.line||0);});
+}
+
+function poll_(){
+  if(!cfg.token||!cfg.venueId||!cfg.court)return;
+  var date=localDate();
+  callApi({action:'fixtures',date:date}).then(function(res){
+    allFixtures=res.fixtures||[];
+    var courtFixtures=allFixtures.filter(function(f){return f.venueId===cfg.venueId&&String(f.court||'')===String(cfg.court);});
+    var current=pickCourtFixture_(courtFixtures);
+    renderBody_(current);
+    if(current){
+      var ids=tieSiblings_(allFixtures,current).map(function(f){return f.id;});
+      Promise.all([
+        callApi({action:'arrivalStatus',fixtureIds:JSON.stringify(ids),date:date}).then(function(r){
+          arrivalStatus={};(r.data||[]).forEach(function(row){arrivalStatus[row.fixture_id+':'+row.player_id]=row.arrived_at;});
+        }),
+        callApi({action:'subNominations',fixtureIds:JSON.stringify(ids)}).then(function(r){
+          subNominations={};(r.data||[]).forEach(function(row){subNominations[row.fixture_id+':'+row.original_player_id]=row.sub_player_id;});
+        }),
+        callApi({action:'unavailableOnDate',date:date}).then(function(r){
+          unavailableIds={};(r.playerIds||[]).forEach(function(id){unavailableIds[id]=true;});
+        })
+      ]).then(function(){renderBody_(current);}).catch(function(){});
+    }
+    if(current&&current.status==='Underway'){
+      callApi({action:'liveProgress',fixtureId:current.id}).then(function(r){
+        if(r.progress){liveState=r.progress;liveState.fixtureId=current.id;liveState.fx=current;}
+        else liveState=null;
+        renderBody_(current);
+      }).catch(function(){});
+    } else {
+      liveState=null;
+    }
+  }).catch(function(err){
+    if(!allFixtures.length)$('cwBody').innerHTML='<div class="hint" style="padding:20px">Couldn’t load live data ('+esc(err.msg||err.reason||'offline')+').</div>';
+  });
+}
+function fmtT(sec){sec=Math.max(0,sec|0);var m=Math.floor(sec/60),s=sec%60;return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
+function tickClock_(){
+  if(!liveState||liveState.breakActive)return;
+  var el=$('cwGameClock'),el2=$('cwMatchClock');if(!el||!el2)return;
+  var elapsed=Math.round((Date.now()-liveState.updated)/1000);
+  el.textContent=fmtT((liveState.gameSec||0)+elapsed);
+  el2.textContent=fmtT((liveState.matchSec||0)+elapsed);
+}
+
+function buildTiePill_(fx,playerId,playerName){
+  var btn=document.createElement('button');btn.type='button';
+  var subId=playerId?subNominations[fx.id+':'+playerId]:'';
+  var isAbsent=!subId&&playerId&&unavailableIds[playerId];
+  if(subId){
+    var arrived=!!arrivalStatus[fx.id+':'+subId];
+    btn.className='arrive-pill'+(arrived?' arrived':'');
+    btn.textContent=(playerName||'?')+' → sub';
+    btn.onclick=function(){toggleArrival_(fx,subId,arrived,btn);};
+  } else if(isAbsent){
+    btn.className='arrive-pill absent';btn.textContent=(playerName||'?')+' (away)';btn.disabled=true;
+  } else {
+    var arrived2=!!arrivalStatus[fx.id+':'+playerId];
+    btn.className='arrive-pill'+(arrived2?' arrived':'');
+    btn.textContent=playerName||'?';
+    if(!playerId)btn.disabled=true;
+    btn.onclick=function(){toggleArrival_(fx,playerId,arrived2,btn);};
+  }
+  return btn;
+}
+function toggleArrival_(fx,playerId,currentlyArrived,btn,retryOnTimeout){
+  if(!playerId)return;
+  btn.disabled=true;
+  if(retryOnTimeout===undefined)retryOnTimeout=true;
+  var date=fx.scheduled||localDate();
+  var call=currentlyArrived?callApi({action:'clearArrival',fixtureId:fx.id,playerId:playerId,date:date})
+    :callApi({action:'markArrival',fixtureId:fx.id,playerId:playerId,date:date});
+  call.then(function(){poll_();}).catch(function(err){
+    if(retryOnTimeout&&err&&err.reason==='timeout'){toggleArrival_(fx,playerId,currentlyArrived,btn,false);return;}
+    btn.disabled=false;
+    alert('Could not update arrival: '+(err.msg||err.reason||'unknown error'));
+  });
+}
+function resultText_(fx){
+  if(fx.gamesP1==null||fx.gamesP2==null)return fx.result||'';
+  var names=(fx.actualPlayers&&fx.actualPlayers[0])?fx.actualPlayers:[fx.player1,fx.player2];
+  var winner=fx.gamesP1>fx.gamesP2?names[0]:names[1];
+  return 'Won by '+(winner||'?')+' '+fx.gamesP1+'-'+fx.gamesP2;
+}
+
+function renderBody_(current){
+  var host=$('cwBody');
+  if(!current){
+    host.innerHTML='<div class="idle">No fixture is currently allocated to '+esc(cfg.venueName||'this venue')+' Court '+esc(cfg.court)+'.</div>';
+    return;
+  }
+  var siblings=tieSiblings_(allFixtures,current);
+  var isLive=current.status==='Underway'&&liveState&&liveState.fixtureId===current.id;
+
+  var html='';
+  if(isLive){
+    var colors=liveState.colors&&liveState.colors.length===2?liveState.colors:['#e6913c','#6b52ae'];
+    var names=liveState.players&&liveState.players.length===2?liveState.players:[current.player1,current.player2];
+    html+='<div class="clockbar tnum">'+
+      '<span class="gt">Game <b>'+esc(liveState.gameNo||1)+'</b></span>'+
+      '<span>Game <b id="cwGameClock">'+esc(fmtT(liveState.gameSec||0))+'</b></span>'+
+      '<span>Match <b id="cwMatchClock">'+esc(fmtT(liveState.matchSec||0))+'</b></span></div>';
+    html+='<div class="arena">';
+    for(var i=0;i<2;i++){
+      var serving=liveState.server===i;
+      html+='<div class="panel p'+i+'" style="background:'+esc(colors[i]||(i?'#6b52ae':'#e6913c'))+'">'+
+        '<span class="pname">'+esc(names[i]||'?')+'</span>'+
+        '<span class="serveslot"><span class="serve'+(serving?' show':'')+'">'+esc(liveState.side||'R')+'</span></span>'+
+        '<span class="pts tnum">'+esc(liveState.points?liveState.points[i]:0)+'</span></div>';
+    }
+    html+='</div>';
+  } else if(current.status==='Played'){
+    html+='<div class="idle">Last result on this court:<br><b>'+esc(current.player1)+' v '+esc(current.player2)+'</b><br>'+esc(resultText_(current))+'</div>';
+  } else {
+    html+='<div class="idle">Court '+esc(cfg.court)+' is between matches — next up is Line '+esc(current.line||'?')+'.</div>';
+  }
+
+  html+='<div class="tiewrap"><div class="tiehead">'+esc(current.team1||'')+' v '+esc(current.team2||'')+'</div></div>';
+  host.innerHTML=html;
+
+  var wrap=host.querySelector('.tiewrap');
+  siblings.forEach(function(fx){
+    var row=document.createElement('div');row.className='tierow';
+    var tn=document.createElement('span');tn.className='tn';tn.textContent='L'+(fx.line||'?');row.appendChild(tn);
+    var tp=document.createElement('span');tp.className='tp';
+    if(fx.status==='Played'){
+      var names=(fx.actualPlayers&&fx.actualPlayers[0])?fx.actualPlayers:[fx.player1,fx.player2];
+      tp.textContent=(names[0]||'?')+' v '+(names[1]||'?');
+    } else {
+      tp.appendChild(buildTiePill_(fx,fx.player1Id,fx.player1||'?'));
+      tp.appendChild(document.createTextNode(' v '));
+      tp.appendChild(buildTiePill_(fx,fx.player2Id,fx.player2||'?'));
+    }
+    row.appendChild(tp);
+    var tres=document.createElement('span');tres.className='tres';
+    tres.textContent=fx.status==='Played'?resultText_(fx):(fx.id===current.id?'On court now':fx.status);
+    row.appendChild(tres);
+    wrap.appendChild(row);
+  });
+}
+
+if(cfg.token&&cfg.venueId&&cfg.court){
+  $('codeStep').style.display='none';$('pickStep').style.display='none';
+  callApi({action:'venues'}).then(function(res){ALLVENUES=res.venues||[];enterWatch_();}).catch(function(){enterWatch_();});
+}
+</script>
+</body>
+</html>

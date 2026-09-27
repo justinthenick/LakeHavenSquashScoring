@@ -45,6 +45,8 @@ function doGet(e) {
       if (action === 'fixtures') return out_({ ok:true, fixtures: readFixtures_(e.parameter.date) }, e);
       if (action === 'result')   return out_(writeResult_(JSON.parse(e.parameter.data || '{}')), e);
       if (action === 'progress') return out_(fixtureProgress_(JSON.parse(e.parameter.data||'{}')),e);
+      if (action === 'liveProgress') return out_(getFixtureProgress_(e.parameter.fixtureId), e);
+      if (action === 'venues') return out_(getVenues_(), e);
       if (action === 'tie')      return out_(tieResults_(e.parameter.fixtureId || ''), e);
       if (action === 'players')  return out_({ ok:true, players: listPlayerNames_().map(function(p){return p.name;}), playerRecords:listPlayerNames_() }, e);
       if (action === 'addPlayer') return out_(resolveOrAddPlayer_(e.parameter.name || ''), e);

@@ -130,7 +130,7 @@ function readFixtures_(date) {
       comp: f.comp_ref, round: f.round, line: f.line,
       team1: teamNames[f.team1_id] || '', team2: teamNames[f.team2_id] || '',
       event: f.comp_ref,
-      court: court, venueName: venue?venue.name:'', courtOverridden: courtOverridden
+      court: court, venueId: venue?comp.venue_id:'', venueName: venue?venue.name:'', courtOverridden: courtOverridden
     };
   });
 }
@@ -387,9 +387,29 @@ function fixtureProgress_(b){
  var fx=requireSb_(sbGet_('fixtures','select=played&fixture_id=eq.'+encodeURIComponent(id))).data;
  if(!fx.length||fx[0].played)return {ok:true,finished:true};
  function pair(v){if(!Array.isArray(v)||v.length!==2||v.some(function(n){return !Number.isInteger(n)||n<0||n>99;}))throw new Error('Invalid progress score.');return v;}
- var p={matchId:session,games:pair(b.games),points:pair(b.points),players:(b.players||[]).slice(0,2).map(function(n){return String(n).slice(0,100);}),updated:Date.now()};
+ function secs(v){v=Number(v);return (Number.isFinite(v)&&v>=0&&v<=36000)?Math.round(v):0;}
+ function hexColor(v){return /^#[0-9a-fA-F]{3,6}$/.test(String(v||''))?String(v):'';}
+ // Extra fields (colors/server/side/clocks) are for Court Watch's live
+ // mirror (FEATURE_SPEC_venue_court_watch.md) - optional so an older
+ // scorer client that doesn't send them still works unchanged.
+ var p={matchId:session,games:pair(b.games),points:pair(b.points),
+   players:(b.players||[]).slice(0,2).map(function(n){return String(n).slice(0,100);}),
+   colors:(b.colors||[]).slice(0,2).map(hexColor),
+   server:(b.server===0||b.server===1)?b.server:null,
+   side:(b.side==='L'||b.side==='R')?b.side:null,
+   gameSec:secs(b.gameSec),matchSec:secs(b.matchSec),breakActive:!!b.breakActive,
+   gameNo:Math.max(1,Math.min(99,parseInt(b.gameNo,10)||1)),
+   updated:Date.now()};
  var lock=LockService.getScriptLock();lock.waitLock(3000);try{var cache=CacheService.getScriptCache(),key='progress:'+id,old=cache.get(key);if(old&&JSON.parse(old).matchId!==session)return {ok:false,error:'Another device is scoring this fixture.'};cache.put(key,JSON.stringify(p),180);}finally{lock.releaseLock();}
  return {ok:true};
+}
+// Court Watch's live-score read - the raw cached progress blob for one
+// fixture (null if nobody's mid-match on it right now).
+function getFixtureProgress_(fixtureId){
+  fixtureId=String(fixtureId||'').trim();
+  if(!fixtureId)throw new Error('Missing fixture id.');
+  var raw=CacheService.getScriptCache().get('progress:'+fixtureId);
+  return {ok:true,progress:raw?JSON.parse(raw):null};
 }
 function fixtureStatuses_(fixtures){
  // Filter match_log by the (small) set of comps in play rather than by every
