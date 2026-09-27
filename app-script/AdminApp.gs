@@ -111,13 +111,22 @@ function getDrawCalendar_(comp){
   function tname(id){ return id&&teamInfo[id]?teamInfo[id].name:''; }
   function pname(id){ return id&&playerNames[id]?playerNames[id]:''; }
 
+  var tz='Australia/Sydney';
   var byRound={};
   fxRes.data.forEach(function(f){
     var r=parseInt(f.round,10); if(!r) return;
     var m=String(f.fixture_id).match(/-M(\d+)$/); var tie=m?m[1]:'1';
     byRound[r]=byRound[r]||{};
+    // f.scheduled is a UTC timestamptz - every fixture's "date" is really
+    // local midnight, which UrlFetchApp/PostgREST hands back as ~13:00 or
+    // 14:00 the PREVIOUS UTC calendar day (AEDT/AEST). A raw string slice
+    // of that (as the client used to do) always shows one day too early;
+    // this converts properly, the same way readFixtures_ (Code.gs) and
+    // getCourtAllocations_ already do for the scorer app and court tools.
+    var sched='';
+    if(f.scheduled){ try{sched=Utilities.formatDate(new Date(f.scheduled),tz,'yyyy-MM-dd');}catch(e){sched=String(f.scheduled).slice(0,10);} }
     if(!byRound[r][tie]) byRound[r][tie]={ tie:tie, team1:tname(f.team1_id), team1No:tno(f.team1_id),
-      team2:tname(f.team2_id), team2No:tno(f.team2_id), scheduled:f.scheduled, lines:[] };
+      team2:tname(f.team2_id), team2No:tno(f.team2_id), scheduled:sched, lines:[] };
     byRound[r][tie].lines.push({ line:parseInt(f.line,10)||0, fixtureId:f.fixture_id,
       player1:pname(f.player1_id), player2:pname(f.player2_id), played:!!f.played });
   });
