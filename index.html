@@ -1216,6 +1216,42 @@ function playerNameById_(id){
 // (every line), swapping with whichever tie is already on that court
 // today, if any. Distinct from the score screen's court tag
 // (updateCourtTag_), which corrects just one in-flight match.
+function setTieCourt_(fx,n,retryOnTimeout){
+  if(retryOnTimeout===undefined)retryOnTimeout=true;
+  callApi({action:'setCourt',fixtureId:fx.id,court:n}).then(function(res){
+    if(res&&res.swapped)alert('Swapped: R'+res.swapped.round+' tie #'+res.swapped.tieNumber+' in '+res.swapped.comp+' moved to Court '+res.swapped.court+'.');
+    loadFixturesForDate(currentFxDate_(),true);
+  }).catch(function(err){
+    // Idempotent server-side (upsert keyed on comp/round/tie; a retry that
+    // finds the court already set skips the swap search entirely), so a
+    // timeout - which very likely already succeeded - is safe to retry once
+    // rather than showing a scary error for what's just cold-start latency.
+    if(retryOnTimeout && err && err.reason==='timeout'){ setTieCourt_(fx,n,false); return; }
+    alert('Could not update court: '+((err&&err.msg)||(err&&err.reason)||err));
+  });
+}
+function overrideMatchCourt_(fixtureId,n,retryOnTimeout,onDone){
+  if(retryOnTimeout===undefined)retryOnTimeout=true;
+  callApi({action:'overrideCourt',fixtureId:fixtureId,court:n}).then(function(){
+    onDone();
+  }).catch(function(err){
+    if(retryOnTimeout && err && err.reason==='timeout'){ overrideMatchCourt_(fixtureId,n,false,onDone); return; }
+    alert('Could not update court: '+((err&&err.msg)||(err&&err.reason)||err));
+  });
+}
+function clearMatchCourtOverride_(fixtureId,retryOnTimeout,onDone){
+  if(retryOnTimeout===undefined)retryOnTimeout=true;
+  callApi({action:'clearCourtOverride',fixtureId:fixtureId}).then(function(){
+    onDone();
+  }).catch(function(err){
+    if(retryOnTimeout && err && err.reason==='timeout'){ clearMatchCourtOverride_(fixtureId,false,onDone); return; }
+    alert('Could not clear override: '+((err&&err.msg)||(err&&err.reason)||err));
+  });
+}
+// Pre-allocation edit for the fixture LIST view - moves the WHOLE tie
+// (every line), swapping with whichever tie is already on that court
+// today, if any. Distinct from the score screen's court tag
+// (updateCourtTag_), which corrects just one in-flight match.
 function buildCourtPill_(fx){
   var btn=document.createElement('button');btn.type='button';
   btn.className='court-pill'+(fx.court?' set':'');
@@ -1226,10 +1262,7 @@ function buildCourtPill_(fx){
     if(val===null)return;
     var n=parseInt(val,10);
     if(!n||n<1){alert('Enter a valid court number.');return;}
-    callApi({action:'setCourt',fixtureId:fx.id,court:n}).then(function(res){
-      if(res&&res.swapped)alert('Swapped: R'+res.swapped.round+' tie #'+res.swapped.tieNumber+' in '+res.swapped.comp+' moved to Court '+res.swapped.court+'.');
-      loadFixturesForDate(currentFxDate_(),true);
-    }).catch(function(err){alert('Could not update court: '+((err&&err.msg)||err));});
+    setTieCourt_(fx,n);
   };
   return btn;
 }
@@ -1392,20 +1425,20 @@ function updateCourtTag_(){
     var val=prompt('Court number for THIS MATCH ONLY (other lines of this tie are not affected). Leave blank to clear an override and follow the tie’s usual court:',activeFixture.court||'');
     if(val===null)return;
     if(val.trim()===''){
-      callApi({action:'clearCourtOverride',fixtureId:activeFixture.id}).then(function(){
+      clearMatchCourtOverride_(activeFixture.id,true,function(){
         activeFixture.courtOverridden=false;
         updateCourtTag_();
         loadFixturesForDate(currentFxDate_(),true);
-      }).catch(function(err){alert('Could not clear override: '+((err&&err.msg)||err));});
+      });
       return;
     }
     var n=parseInt(val,10);
     if(!n||n<1){alert('Enter a valid court number.');return;}
-    callApi({action:'overrideCourt',fixtureId:activeFixture.id,court:n}).then(function(){
+    overrideMatchCourt_(activeFixture.id,n,true,function(){
       activeFixture.court=n;activeFixture.courtOverridden=true;
       updateCourtTag_();
       loadFixturesForDate(currentFxDate_(),true);
-    }).catch(function(err){alert('Could not update court: '+((err&&err.msg)||err));});
+    });
   };
 }
 function renderScore(){
