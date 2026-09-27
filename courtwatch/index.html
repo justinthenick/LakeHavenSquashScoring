@@ -122,7 +122,12 @@ function saveCfg_(){try{localStorage.setItem('cw_config',JSON.stringify(cfg));}c
 
 function jsonp(url){
   return new Promise(function(resolve,reject){
-    var cb='__cw_'+Date.now()+Math.floor(Math.random()*1e4);
+    // Must match the server's callback allow-list (out_() in Code.gs checks
+    // /^__cc_[0-9]+$/) - anything else comes back as a bare JSON error body,
+    // which a <script> tag fails to parse silently (no onerror), so it just
+    // hangs until the timeout below. Same prefix as the scorer app, not
+    // because they share state, but because the server only accepts this one.
+    var cb='__cc_'+Date.now()+Math.floor(Math.random()*1e4);
     var s=document.createElement('script');
     var timer=setTimeout(function(){cleanup();reject({reason:'timeout'});},20000);
     function cleanup(){clearTimeout(timer);try{delete window[cb];}catch(e){window[cb]=undefined;}if(s.parentNode)s.parentNode.removeChild(s);}
