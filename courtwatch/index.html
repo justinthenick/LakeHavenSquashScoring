@@ -49,26 +49,28 @@
   .clockbar b{font-size:19px}
   .clockbar .gt{padding-right:14px;border-right:2px solid var(--line)}
 
+  #cwBody{flex:1;display:flex;flex-direction:column;min-height:0}
   .arena{flex:1;display:flex;min-height:220px}
   .panel{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
     padding:14px 10px;position:relative;color:#fff}
   .panel.p0{background:var(--p1)}
   .panel.p1{background:var(--p2)}
-  .pname{font-size:18px;font-weight:800;text-align:center;margin-bottom:6px;max-width:100%;
+  .pname{font-size:clamp(18px,3vw,34px);font-weight:800;text-align:center;margin-bottom:6px;max-width:100%;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .pts{font-size:min(22vw,140px);font-weight:900;line-height:1}
-  .serveslot{height:24px;margin-bottom:4px}
-  .serve{display:none;font-size:12px;font-weight:800;background:rgba(255,255,255,.25);border-radius:8px;padding:2px 10px}
+  .pts{font-size:min(24vw,34vh,220px);font-weight:900;line-height:1}
+  .serveslot{height:clamp(24px,4vh,40px);margin-bottom:4px}
+  .serve{display:none;font-size:clamp(12px,1.6vw,18px);font-weight:800;background:rgba(255,255,255,.25);border-radius:8px;padding:4px 14px}
   .serve.show{display:inline-block}
 
   .idle{flex:1;display:flex;align-items:center;justify-content:center;padding:30px 16px;text-align:center;color:var(--muted);font-size:15px}
 
-  .tiewrap{padding:14px}
+  .tiewrap{flex:none;padding:14px;overflow-y:auto}
   .tiehead{font-size:15px;font-weight:800;margin-bottom:8px}
   .tierow{display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
   .tierow .tn{width:26px;flex:none;font-weight:800;color:var(--muted)}
   .tierow .tp{flex:1;min-width:0}
   .tierow .tres{flex:none;font-size:12px;color:var(--muted);text-align:right;max-width:44%}
+  .tierow .tres.now{color:var(--ok);font-weight:800}
   .arrive-pill{font:inherit;font-weight:700;border:1px solid var(--line);background:#fff;color:inherit;
     border-radius:20px;padding:3px 10px;margin:0 2px 4px 0;font-size:13px}
   .arrive-pill.arrived{background:#dff2e5;border-color:#238755;color:#1c6b3d}
@@ -217,7 +219,12 @@ function enterWatch_(){
   $('cwDate').value=cfg.date||localDate();
   populateSwitcher_();
   poll_();
+  // Two cadences: who's on this court, the tie, arrivals - all change rarely,
+  // so that stays on the slower cycle. The live score itself needs to feel
+  // immediate, so it gets its own much faster, much cheaper poll (just the
+  // one cached blob, not a full fixtures fetch) once a live match is found.
   clearInterval(pollTimer);pollTimer=setInterval(poll_,8000);
+  clearInterval(liveTimer);liveTimer=setInterval(pollLive_,2500);
   clearInterval(tickTimer);tickTimer=setInterval(tickClock_,1000);
 }
 function populateSwitcher_(){
@@ -238,10 +245,10 @@ $('cwVenue').onchange=function(){
 $('cwCourt').onchange=function(){cfg.court=$('cwCourt').value;saveCfg_();poll_();};
 $('cwDate').onchange=function(){cfg.date=$('cwDate').value;saveCfg_();poll_();};
 
-var pollTimer=null,tickTimer=null;
+var pollTimer=null,liveTimer=null,tickTimer=null;
 var allFixtures=[],arrivalStatus={},subNominations={},unavailableIds={};
 var liveState=null; // {games,points,players,colors,server,side,gameSec,matchSec,breakActive,gameNo,updated,fixtureId}
-var lastFixtureId=null;
+var lastCurrent=null;
 
 function tieNumOf_(id){var m=String(id).match(/-M(\d+)$/);return m?m[1]:'1';}
 function pickCourtFixture_(list){
@@ -267,6 +274,7 @@ function poll_(){
     allFixtures=res.fixtures||[];
     var courtFixtures=allFixtures.filter(function(f){return f.venueId===cfg.venueId&&String(f.court||'')===String(cfg.court);});
     var current=pickCourtFixture_(courtFixtures);
+    lastCurrent=current;
     renderBody_(current);
     if(current){
       var ids=tieSiblings_(allFixtures,current).map(function(f){return f.id;});
@@ -294,6 +302,15 @@ function poll_(){
   }).catch(function(err){
     if(!allFixtures.length)$('cwBody').innerHTML='<div class="hint" style="padding:20px">Couldn’t load live data ('+esc(err.msg||err.reason||'offline')+').</div>';
   });
+}
+// Fast cadence: just the one cached progress blob for whichever fixture
+// poll_() last identified as live - cheap enough to run often, so the
+// score/clock feel close to real-time between the slower full refreshes.
+function pollLive_(){
+  if(!lastCurrent||lastCurrent.status!=='Underway')return;
+  callApi({action:'liveProgress',fixtureId:lastCurrent.id}).then(function(r){
+    if(r.progress){liveState=r.progress;liveState.fixtureId=lastCurrent.id;liveState.fx=lastCurrent;renderBody_(lastCurrent);}
+  }).catch(function(){});
 }
 function fmtT(sec){sec=Math.max(0,sec|0);var m=Math.floor(sec/60),s=sec%60;return (m<10?'0':'')+m+':'+(s<10?'0':'')+s;}
 function tickClock_(){
@@ -336,6 +353,34 @@ function toggleArrival_(fx,playerId,currentlyArrived,btn,retryOnTimeout){
     btn.disabled=false;
     alert('Could not update arrival: '+(err.msg||err.reason||'unknown error'));
   });
+}
+// Queue position within this tie - same idea as the scorer app's own
+// "queued at position #N" (played -> current -> ready, in arrival order),
+// scoped to just these 5 lines rather than the whole day's fixtures.
+function effectivePlayer_(fx,slot){
+  var pid=slot===1?fx.player1Id:fx.player2Id;
+  var subId=pid?subNominations[fx.id+':'+pid]:'';
+  return subId||pid;
+}
+function lineReadyAt_(fx){
+  var a=effectivePlayer_(fx,1),b=effectivePlayer_(fx,2);
+  if(!a||!b)return null;
+  var ta=arrivalStatus[fx.id+':'+a],tb=arrivalStatus[fx.id+':'+b];
+  if(!ta||!tb)return null;
+  return ta>tb?ta:tb;
+}
+function queuePositions_(siblings,currentId,onCourtNow){
+  var ready=[];
+  siblings.forEach(function(fx){
+    if(fx.status==='Played')return;
+    if(onCourtNow&&fx.id===currentId)return;
+    var at=lineReadyAt_(fx);
+    if(at)ready.push({fx:fx,at:at});
+  });
+  ready.sort(function(a,b){return a.at<b.at?-1:a.at>b.at?1:0;});
+  var out={};
+  ready.forEach(function(r,i){out[r.fx.id]=i+1;});
+  return out;
 }
 function resultText_(fx){
   if(fx.gamesP1==null||fx.gamesP2==null)return fx.result||'';
@@ -380,6 +425,8 @@ function renderBody_(current){
   html+='<div class="tiewrap"><div class="tiehead">'+esc(current.team1||'')+' v '+esc(current.team2||'')+'</div></div>';
   host.innerHTML=html;
 
+  var onCourtNow=isLive||current.status==='Underway';
+  var qpos=queuePositions_(siblings,current.id,onCourtNow);
   var wrap=host.querySelector('.tiewrap');
   siblings.forEach(function(fx){
     var row=document.createElement('div');row.className='tierow';
@@ -395,7 +442,12 @@ function renderBody_(current){
     }
     row.appendChild(tp);
     var tres=document.createElement('span');tres.className='tres';
-    tres.textContent=fx.status==='Played'?resultText_(fx):(fx.id===current.id?'On court now':fx.status);
+    var isNow=onCourtNow&&fx.id===current.id;
+    if(fx.status==='Played')tres.textContent=resultText_(fx);
+    else if(isNow)tres.textContent='On court now';
+    else if(qpos[fx.id])tres.textContent=qpos[fx.id]===1?'Next up':'Queued #'+qpos[fx.id];
+    else tres.textContent='Not yet played';
+    if(isNow||qpos[fx.id]===1){tres.classList.add('now');}
     row.appendChild(tres);
     wrap.appendChild(row);
   });

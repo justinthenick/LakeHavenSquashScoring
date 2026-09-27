@@ -1833,7 +1833,7 @@ $('pendingExport').onclick=function(){var blob=new Blob([JSON.stringify(loadQueu
 
 var progressSentAt=0,progressBusy=false;
 function publishProgress(){
- if(!M||M.over||!activeFixture||progressBusy||Date.now()-progressSentAt<15000||!navigator.onLine)return;
+ if(!M||M.over||!activeFixture||progressBusy||Date.now()-progressSentAt<3000||!navigator.onLine)return;
  progressSentAt=Date.now();progressBusy=true;
  callApi({action:'progress',data:JSON.stringify({fixtureId:activeFixture.id,matchId:M.matchId,games:matchGamesScore(M),points:M.points,players:M.config.players.map(function(p){return p.name;}),
    colors:[chosen.c1,chosen.c2],server:M.server,side:M.side,
