@@ -257,17 +257,18 @@
     .clockbar .gamesTally{padding-right:22px}
     .clockbar .gamesTally b{font-size:36px}
   }
-  /* Phone, portrait: the base clockbar sizing (built for tablet/desktop
-     width) doesn't fit a phone's width once Game/Games/Game-clock/Match-
-     clock are all laid out side by side - it was overflowing off the left
-     edge of the screen with no wrap. */
+  /* Phone, portrait: Game/Games/Game-clock/Match-clock (+ the court tag)
+     side by side just doesn't fit a phone's width, full stop - shrinking
+     the font further wasn't enough, it just clipped smaller. Let it wrap
+     to two centred lines instead, which is airtight regardless of exact
+     device width or how much extra the court tag adds. */
   @media (max-width:600px){
-    .clockbar{font-size:14px;padding:4px 8px 10px}
-    .clockbar>*:not(:last-child){margin-right:10px}
-    .clockbar b{font-size:18px}
+    .clockbar{flex-wrap:wrap;row-gap:2px;font-size:13px;padding:4px 8px 8px}
+    .clockbar>*:not(:last-child){margin-right:8px}
+    .clockbar b{font-size:16px}
     .clockbar .gamesTally{padding-right:8px}
-    .clockbar .gamesTally>*:not(:last-child){margin-right:8px}
-    .clockbar .gamesTally b{font-size:18px}
+    .clockbar .gamesTally>*:not(:last-child){margin-right:6px}
+    .clockbar .gamesTally b{font-size:16px}
   }
   @media (orientation:landscape) and (max-height:600px){
     .hname{display:block}
