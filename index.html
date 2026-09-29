@@ -71,6 +71,10 @@
   .toggle button{flex:1;padding:14px;font-weight:800;font-size:16px;color:var(--muted)}
   .toggle button[aria-pressed="true"]{background:var(--ink);color:#fff}
   .hint{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.4}
+  .loadwrap{display:flex;align-items:center;padding:16px 4px;color:var(--muted);font-size:14px;font-weight:600}
+  .spinner{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--ink);border-radius:50%;
+    flex:none;margin-right:12px;animation:spin 0.8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
   .fixtures{margin-top:8px;display:flex;flex-direction:column}
   .fixtures>*:not(:last-child){margin-bottom:10px}
   .fxrow{display:flex;margin-bottom:8px}
@@ -105,7 +109,15 @@
   .exit{color:var(--danger);font-weight:800;font-size:15px;padding:6px 8px}
   .queuebar{display:none;overflow-x:auto;padding:0 10px 6px;flex:none;-webkit-overflow-scrolling:touch}
   .queuebar>*:not(:last-child){margin-right:6px}
-  .queuebar.show{display:flex}
+  /* Phone: the queue/arrival carousel was meant for tablet+ - on a phone it
+     just crowds the score screen, so it's collapsed behind queueToggle by
+     default (see the button + JS), only auto-shown at tablet width up. */
+  @media (min-width:768px){ .queuebar.show{display:flex} }
+  .queuebar.show.expanded{display:flex}
+  #queueToggle{display:none;width:100%;text-align:center;padding:8px;font-size:13px;
+    font-weight:700;color:var(--muted);background:var(--card);border-bottom:1px solid var(--line)}
+  #queueToggle.show{display:block}
+  @media (min-width:768px){ #queueToggle{display:none!important} }
   .qcard{flex:1 1 100px;min-width:88px;max-width:170px;background:#fff;border:1px solid var(--line);
     border-radius:12px;padding:6px 8px;cursor:pointer;font-weight:700;font-size:12px;color:var(--ink);text-align:left}
   .qcard.ready{border-color:#238755;border-width:2px}
@@ -373,6 +385,7 @@
     <span class="hname" id="hname1"></span>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
+  <button type="button" id="queueToggle">Queue &amp; arrivals ▾</button>
   <div id="queueBar" class="queuebar"></div>
   <div class="clockbar tnum">
     <span class="gamesTally"><span class="gt-l">Game <b id="gameNo">1</b></span><span class="gt-l">Games <b id="gamesLine">0–0</b></span></span>
@@ -1110,11 +1123,21 @@ function fillQueueHost_(host,groups){
 }
 function renderQueueBar_(){
   var host=$('queueBar');if(!host)return;
+  var toggle=$('queueToggle');
   var groups=computeQueueGroups_();
-  if(!groups){host.classList.remove('show');host.innerHTML='';return;}
+  if(!groups){
+    host.classList.remove('show','expanded');host.innerHTML='';
+    if(toggle){toggle.classList.remove('show');toggle.textContent='Queue & arrivals ▾';}
+    return;
+  }
   fillQueueHost_(host,groups);
   host.classList.add('show');
+  if(toggle)toggle.classList.add('show');
 }
+$('queueToggle').onclick=function(){
+  var expanded=$('queueBar').classList.toggle('expanded');
+  this.textContent='Queue & arrivals '+(expanded?'▴':'▾');
+};
 // Tapping a queue card leaves the current match (with the same "unsaved
 // progress" confirm as Exit) and loads the tapped fixture on the setup
 // screen, ready to start - deliberately not auto-starting, since scorer/ref
@@ -1156,13 +1179,39 @@ function refreshQueueData_(){
 // date at a time, so fetch just that date and merge it into allFixtures.
 // Already-loaded dates render instantly from cache unless force is set
 // (the reload button, a background refresh, or after saving a result).
+// Loading is only ever hidden again by setFixturesLoading_(false) - never
+// flickered off mid-retry - so a cold-start retry stays visually "still
+// loading" the whole time instead of looking like it finished and restarted.
+function setFixturesLoading_(isLoading,firstLoad){
+  var btn=$('reloadFx');
+  if(btn)btn.style.display=isLoading?'none':'';
+  if(firstLoad){
+    if(isLoading)$('fixtures').innerHTML='<div class="loadwrap"><span class="spinner"></span>Looking for fixtures…</div>';
+    return;
+  }
+  // Reloading a date that already has fixtures on screen - keep them
+  // visible (no jarring wipe-and-reload flash), just prepend a banner so
+  // it's unmistakable that a refresh is actually happening. Removed
+  // unconditionally on the way out, since a "nothing changed" reload never
+  // triggers renderFixtures' own redraw to clear it.
+  var host=$('fixtures'),existing=document.getElementById('fxLoadingBanner');
+  if(isLoading){
+    if(!existing){
+      var b=document.createElement('div');b.id='fxLoadingBanner';b.className='loadwrap';
+      b.innerHTML='<span class="spinner"></span>Refreshing fixtures…';
+      host.insertBefore(b,host.firstChild);
+    }
+  } else if(existing){ existing.remove(); }
+}
 function loadFixturesForDate(date,force,retryOnTimeout){
   if(!scriptConfigured()||!CONFIG.SHARED_SECRET){$('fixtures').innerHTML='<div class="hint">Enter the private club access code to load fixtures. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Enter club code</button></div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
   if(!force&&loadedFixtureDates[date]){applyFixtureFilter();return;}
   if(retryOnTimeout===undefined)retryOnTimeout=true;
-  if(!loadedFixtureDates[date])$('fixtures').innerHTML='<div class="hint">Looking for fixtures…</div>';
+  var firstLoad=!loadedFixtureDates[date];
+  setFixturesLoading_(true,firstLoad);
   fetchFixtures(date).then(function(list){
     loadedFixtureDates[date]=true;
+    setFixturesLoading_(false);
     renderFixtures(list);
   }).catch(function(err){
     // Apps Script's first request after being idle spins up a fresh execution
@@ -1170,6 +1219,7 @@ function loadFixturesForDate(date,force,retryOnTimeout){
     // before showing an error, rather than making a cold start look like a
     // broken deployment.
     if(retryOnTimeout && err && err.reason==='timeout'){ loadFixturesForDate(date,force,false); return; }
+    setFixturesLoading_(false);
     if(loadedFixtureDates[date])return; // already showing this date's cached fixtures - leave them displayed
     var m=err.msg||err.reason||'offline';
     var hint=(m==='timeout'||m==='network')?' This usually means the URL isn’t the deployed <b>/exec</b> web app (the <b>/dev</b> URL won’t work here), or the deployment’s access isn’t set to <b>Anyone</b>.':'';

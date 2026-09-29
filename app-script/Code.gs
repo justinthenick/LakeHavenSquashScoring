@@ -76,16 +76,36 @@ function uniq_(arr) {
 }
 
 function readFixtures_(date) {
-  var res = sbGet_('fixtures', 'select=fixture_id,round,line,scheduled,comp_ref,team1_id,team2_id,player1_id,player2_id,played&player1_id=not.is.null');
+  var tz = 'Australia/Sydney';
+  var query = 'select=fixture_id,round,line,scheduled,comp_ref,team1_id,team2_id,player1_id,player2_id,played&player1_id=not.is.null';
+  var queryScoped = false;
+  if (date) {
+    // Ask Supabase for just this local calendar day's window (in UTC,
+    // computed via Utilities.parseDate - the same trusted conversion
+    // toDate_/cloneComp_ already use) instead of pulling every fixture the
+    // comp has ever had and filtering in memory. That in-memory filter
+    // (still applied below as a fallback) was correct, but it meant every
+    // single fixtures request - every 30s poll included - downloaded the
+    // WHOLE season's fixtures over the network first.
+    try {
+      var m = String(date).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) {
+        var start = Utilities.parseDate(date, tz, 'yyyy-MM-dd');
+        var y=+m[1], mo=+m[2], d=+m[3];
+        var nextStr = Utilities.formatDate(new Date(Date.UTC(y, mo-1, d+1)), 'UTC', 'yyyy-MM-dd');
+        var end = Utilities.parseDate(nextStr, tz, 'yyyy-MM-dd');
+        query += '&scheduled=gte.'+encodeURIComponent(start.toISOString())+'&scheduled=lt.'+encodeURIComponent(end.toISOString());
+        queryScoped = true;
+      }
+    } catch (e) { /* fall through to the unfiltered fetch + in-memory filter below */ }
+  }
+  var res = sbGet_('fixtures', query);
   if (!res.ok) throw new Error('readFixtures: ' + res.error);
   var fixtures = res.data;
-  var tz = 'Australia/Sydney';
-  if (date) {
-    // Filtered on the Apps Script side using the same timezone-aware
-    // conversion used below to build each fixture's display date, rather
-    // than at the Supabase query level - `scheduled` needs a timezone
-    // conversion to get the right calendar date, so an equality filter on
-    // the raw column could silently exclude fixtures near a day boundary.
+  if (date && !queryScoped) {
+    // Fallback for an unexpected date format only - proper timezone
+    // conversion, never a raw substring match (that's what caused the
+    // whole MPM/WPM day-shift mixup earlier).
     fixtures = fixtures.filter(function(f){
       if (!f.scheduled) return false;
       var sched;
