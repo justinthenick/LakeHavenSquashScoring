@@ -660,7 +660,7 @@ function flushQueue(){
   return postResult(p).then(function(){store.del(queueKey(p.matchId));sent++;},function(err){p.queueError=err.msg||err.reason||'Connection failed';enqueue(p);});
  });},Promise.resolve()).then(function(){return sent;});}
  var work=(navigator.locks&&navigator.locks.request)?navigator.locks.request('court-card-result-sync',drain):drain();
- flushInFlight=work.then(function(n){flushInFlight=null;refreshQueueStatus();return n;},function(e){flushInFlight=null;throw e;});return flushInFlight;
+ flushInFlight=work.then(function(n){flushInFlight=null;refreshQueueStatus();if(n&&scriptConfigured()&&CONFIG.SHARED_SECRET)loadFixturesForDate(lastFixtureCacheDate||currentFxDate_(),true,undefined,true);return n;},function(e){flushInFlight=null;throw e;});return flushInFlight;
 }
 
 /* active-match autosave (crash/reopen resilience) --------------------- */
@@ -1873,10 +1873,10 @@ $('save').onclick=function(){
  }).then(function(){$('again').disabled=false;refreshQueueStatus();});
 };
 $('undoMatch').onclick=function(){cancelAutoSaveTimer();if(!M||M.locked)return;undo(M);lastGames=M.games.length;show('score');startTimers();renderScore();if(M.timing.breakActive)openGap();};
-$('again').onclick=function(){M=null;activeFixture=null;lastGames=0;clearActive();
+$('again').onclick=function(){var hadResult=!!(M&&M.locked);M=null;activeFixture=null;lastGames=0;clearActive();
   plannedNames=['',''];if($('sub1'))$('sub1').checked=false;if($('sub2'))$('sub2').checked=false;
   lockField(0,false);lockField(1,false);hideSuggest(0);hideSuggest(1);
-  banner('setupBanner','',null);show('setup');loadFixturesForDate(currentFxDate_(),false);};
+  banner('setupBanner','',null);show('setup');loadFixturesForDate(currentFxDate_(),hadResult);};
 
 /* ==========================================================================
    7. RESUME + BOOT
