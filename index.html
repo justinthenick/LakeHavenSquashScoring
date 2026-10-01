@@ -300,6 +300,9 @@
   .footbar>*:not(:last-child){margin-right:10px}
   .footbar button{flex:1;padding:12px;border-radius:16px;background:var(--card);
     border:1px solid var(--line);font-weight:800;font-size:15px}
+  /* Declared after the base rule on purpose - an earlier tablet override lost to it on source order. */
+  @media (min-width:768px){ .footbar{padding:6px 14px calc(8px + var(--safe-bot))} .footbar>*:not(:last-child){margin-right:14px} .footbar button{padding:18px 12px;font-size:21px;border-radius:18px} }
+  @media (min-width:768px) and (min-height:900px){ .footbar button{padding:28px 14px;font-size:28px;border-radius:22px} }
   .clockbar{flex:none;display:flex;align-items:center;justify-content:center;
     padding:6px 12px 14px;color:var(--muted);font-weight:800;font-size:18px;line-height:1.2}
   .clockbar>*:not(:last-child){margin-right:22px}
