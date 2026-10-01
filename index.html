@@ -802,6 +802,8 @@ wireSub(0);wireSub(1);
 /* fixtures list */
 var allFixtures=[];
 var loadedFixtureDates={}; // date string -> true, dates already fetched into allFixtures
+var lastFixtureCacheDate=null;
+var fixtureDetailsCacheTime=0; // timestamp of last detail update
 function mergeFixtures_(list){
   var byId={};
   allFixtures.forEach(function(f){byId[f.id]=f;});
@@ -1217,6 +1219,19 @@ function setFixturesLoading_(isLoading,firstLoad,silent){
     }
   } else if(existing){ existing.remove(); }
 }
+function updateFixtureDetails(){
+ if(!allFixtures.length||Date.now()-fixtureDetailsCacheTime<25000)return;
+ fixtureDetailsCacheTime=Date.now();
+ fetchFixtures(lastFixtureCacheDate).then(function(list){
+  var byId={};list.forEach(function(f){byId[f.id]=f;});
+  allFixtures.forEach(function(cached){
+   if(!byId[cached.id])return;
+   var fresh=byId[cached.id];
+   cached.status=fresh.status;cached.gamesP1=fresh.gamesP1;cached.gamesP2=fresh.gamesP2;cached.result=fresh.result;cached.actualPlayers=fresh.actualPlayers;cached.court=fresh.court;cached.scheduledTime=fresh.scheduledTime;
+  });
+  refreshFixtureViews_();
+ }).catch(function(e){console.log('Background detail update skipped',e.msg||e.reason||'offline');});
+}
 function loadFixturesForDate(date,force,retryOnTimeout,silent){
   if(!scriptConfigured()||!CONFIG.SHARED_SECRET){$('fixtures').innerHTML='<div class="hint">Enter the private club access code to load fixtures. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Enter club code</button></div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
   if(!force&&loadedFixtureDates[date]){applyFixtureFilter();return;}
@@ -1224,7 +1239,7 @@ function loadFixturesForDate(date,force,retryOnTimeout,silent){
   var firstLoad=!loadedFixtureDates[date];
   setFixturesLoading_(true,firstLoad,silent);
   fetchFixtures(date).then(function(list){
-    loadedFixtureDates[date]=true;
+    loadedFixtureDates[date]=true;lastFixtureCacheDate=date;fixtureDetailsCacheTime=Date.now();
     setFixturesLoading_(false,firstLoad,silent);
     renderFixtures(list);
   }).catch(function(err){
@@ -1785,6 +1800,31 @@ function buildPayload(){
   };
 }
 var pendingPayload=null;
+var autoSaveGraceTimeoutId=null,autoSaveCountdownIntervalId=null,autoSaveSecondsRemaining=0;
+function startAutoSaveTimer(){
+ if(M.locked)return;
+ autoSaveGraceTimeoutId=setTimeout(function(){startAutoSaveCountdown();},5000);
+}
+function startAutoSaveCountdown(){
+ autoSaveSecondsRemaining=10;updateAutoSaveButton();
+ autoSaveCountdownIntervalId=setInterval(function(){
+  autoSaveSecondsRemaining--;updateAutoSaveButton();
+  if(autoSaveSecondsRemaining<=0){
+   cancelAutoSaveTimer();
+   if(!M.locked)$('save').click();
+  }
+ },1000);
+}
+function updateAutoSaveButton(){
+ var btn=$('save');if(!btn)return;
+ if(autoSaveGraceTimeoutId){btn.textContent='Save result';}
+ else if(autoSaveCountdownIntervalId){btn.textContent='Auto-saving in '+autoSaveSecondsRemaining+'s';}
+}
+function cancelAutoSaveTimer(){
+ if(autoSaveGraceTimeoutId){clearTimeout(autoSaveGraceTimeoutId);autoSaveGraceTimeoutId=null;}
+ if(autoSaveCountdownIntervalId){clearInterval(autoSaveCountdownIntervalId);autoSaveCountdownIntervalId=null;}
+ autoSaveSecondsRemaining=0;
+}
 function goSummary(){
   var p=buildPayload();pendingPayload=p;var n=M.config.players;
   $('th0').textContent=n[0].name;$('th1').textContent=n[1].name;
@@ -1801,10 +1841,13 @@ function goSummary(){
   banner('saveBanner','',null);
   $('queueHint').textContent=queueStatus();
   show('summary');
+  cancelAutoSaveTimer();
+  startAutoSaveTimer();
 }
 function queueStatus(){var q=loadQueue();return q.length?(q.length+' result'+(q.length>1?'s':'')+' waiting to sync.'+(q.some(function(p){return p.queueError;})?' Some results need attention. Open pending results below.':'')):'';}
 
 $('save').onclick=function(){
+ cancelAutoSaveTimer();
  var p=pendingPayload;if(!p||M.locked)return;
  if(!store.persistent){banner('saveBanner','err','Browser storage is unavailable. Keep this page open; enable storage before saving so your result has a durable backup.');return;}
  // Persist before sending, including when online, so a closed tab can retry safely.
@@ -1824,11 +1867,11 @@ $('save').onclick=function(){
   $('save').textContent='Stored — pending sync';clearActive();
  }).then(function(){$('again').disabled=false;refreshQueueStatus();});
 };
-$('undoMatch').onclick=function(){if(!M||M.locked)return;undo(M);lastGames=M.games.length;show('score');startTimers();renderScore();if(M.timing.breakActive)openGap();};
+$('undoMatch').onclick=function(){cancelAutoSaveTimer();if(!M||M.locked)return;undo(M);lastGames=M.games.length;show('score');startTimers();renderScore();if(M.timing.breakActive)openGap();};
 $('again').onclick=function(){M=null;activeFixture=null;lastGames=0;clearActive();
   plannedNames=['',''];if($('sub1'))$('sub1').checked=false;if($('sub2'))$('sub2').checked=false;
   lockField(0,false);lockField(1,false);hideSuggest(0);hideSuggest(1);
-  banner('setupBanner','',null);show('setup');loadFixturesForDate(currentFxDate_(),true);};
+  banner('setupBanner','',null);show('setup');loadFixturesForDate(currentFxDate_(),false);};
 
 /* ==========================================================================
    7. RESUME + BOOT
@@ -1907,7 +1950,7 @@ function publishProgress(){
 setInterval(function(){if(M&&!M.over)publishProgress();},30000);
 setInterval(function(){
   if(document.visibilityState!=='visible'||!CONFIG.SHARED_SECRET)return;
-  if($('setup').classList.contains('active'))loadFixturesForDate(currentFxDate_(),true,undefined,true);
+  if($('setup').classList.contains('active'))updateFixtureDetails();
   else if($('score').classList.contains('active'))refreshQueueData_();
 },30000);
 </script>
