@@ -1120,6 +1120,60 @@ function gamesFromPoints(hp,ap){var hg=0,ag=0,n=Math.max(hp.length,ap.length);fo
 function validGame(h,a){if(h==null||a==null)return true;if(h===a)return false;return Math.max(h,a)===TARGET&&Math.min(h,a)<TARGET;}
 function sum(arr){var t=0,any=false;for(var i=0;i<arr.length;i++){if(arr[i]!=null){t+=arr[i];any=true;}}return any?t:null;}
 
+/* ---- manual tie correction: when the scan's date/teams can't be reconciled
+   (or matched the wrong tie), pick the round + tie from the comp's draw and
+   re-run the normal fixture resolution with that tie's date and teams. ---- */
+var CALCACHE={};
+function loadCal(comp,cb,fail){
+  if(CALCACHE[comp])return cb(CALCACHE[comp]);
+  google.script.run.withSuccessHandler(function(cal){
+    if(!cal||!cal.ok)return fail((cal&&cal.error)||'Could not load the draw');
+    CALCACHE[comp]=cal;cb(cal);
+  }).withFailureHandler(function(e){fail(e.message);}).getDrawCalendar(comp);
+}
+function initFixBox(ocr,rf){
+  var box=$('fixbox');if(!box)return;
+  var matched=!!(rf&&rf.matched),comp=$('comp').value;
+  box.innerHTML='<details'+(matched?'':' open')+'><summary style="cursor:pointer;font-weight:800">'+(matched?'Wrong tie? Match manually':'Match to a fixture manually')+'</summary><div id="fixbody" class="muted" style="margin-top:8px"></div></details>';
+  var det=box.querySelector('details'),filled=false;
+  function fill(){
+    if(filled||!det.open)return;filled=true;
+    $('fixbody').textContent='Loading the draw…';
+    loadCal(comp,function(cal){buildFixBody(cal,ocr,rf,comp);},function(m){filled=false;$('fixbody').innerHTML='<div class="banner warn">'+esc(m)+'</div>';});
+  }
+  det.addEventListener('toggle',fill);fill();
+}
+function buildFixBody(cal,ocr,rf,comp){
+  var rounds=cal.rounds||[],ri0=0,ti0=0;
+  rounds.forEach(function(r,i){if(ocr.date&&r.ties.some(function(t){return t.scheduled===ocr.date;})&&!ri0)ri0=i;});
+  function tieLabel(t){return esc((t.team1||'?')+' v '+(t.team2||'?'))+' · '+esc(t.scheduled||'no date');}
+  var h='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'+
+    '<select id="fxRound" style="width:auto">'+rounds.map(function(r,i){return '<option value="'+i+'"'+(i===ri0?' selected':'')+'>Round '+r.round+(r.scheduled?' · '+esc(r.scheduled):'')+'</option>';}).join('')+'</select>'+
+    '<select id="fxTie" style="width:auto;max-width:100%"></select></div>'+
+    '<label style="display:block;margin:8px 0"><input type="checkbox" id="fxSwap"> The sheet has the teams the other way round (first team on the sheet is the <b>away</b> team in the draw)</label>'+
+    '<button class="ghost" id="fxApply">Use this tie</button> <span id="fxMsg" style="margin-left:8px"></span>'+
+    '<div class="muted" style="margin-top:6px">Applying re-reads the scanned scores against this tie. Do this before editing the grid &mdash; edits below are reset.</div>';
+  $('fixbody').innerHTML=h;
+  function fillTies(){
+    var r=rounds[+$('fxRound').value]||{ties:[]};
+    var pick=0;r.ties.forEach(function(t,i){
+      if(ocr.teamA!=null&&ocr.teamB!=null&&((t.team1No==ocr.teamA&&t.team2No==ocr.teamB)||(t.team1No==ocr.teamB&&t.team2No==ocr.teamA)))pick=i;});
+    $('fxTie').innerHTML=r.ties.map(function(t,i){return '<option value="'+i+'"'+(i===pick?' selected':'')+'>'+tieLabel(t)+'</option>';}).join('');
+  }
+  $('fxRound').onchange=fillTies;fillTies();
+  $('fxApply').onclick=function(){
+    var r=rounds[+$('fxRound').value],t=r&&r.ties[+$('fxTie').value];if(!t)return;
+    var swap=$('fxSwap').checked,A=swap?{no:t.team2No,name:t.team2}:{no:t.team1No,name:t.team1},B=swap?{no:t.team1No,name:t.team1}:{no:t.team2No,name:t.team2};
+    $('fxApply').disabled=true;$('fxMsg').textContent='Matching…';
+    google.script.run.withSuccessHandler(function(rf2){
+      $('fxApply').disabled=false;
+      if(!rf2||!rf2.matched){$('fxMsg').innerHTML='<span style="color:var(--warn)">'+esc((rf2&&rf2.reason)||(rf2&&rf2.error)||'No match')+'</span>';return;}
+      var o2=JSON.parse(JSON.stringify(ocr));o2.date=t.scheduled||o2.date;o2.teamA=A.no;o2.teamB=B.no;o2.teamAName=A.name;o2.teamBName=B.name;
+      render(o2,rf2);
+    }).withFailureHandler(function(e){$('fxApply').disabled=false;$('fxMsg').innerHTML='<span style="color:var(--warn)">'+esc(e.message)+'</span>';})
+    .resolveFixtures(comp,t.scheduled,A.no,B.no,A.name,B.name);
+  };
+}
 function render(ocr, rf){
   HOME_IS_TEAM1=!(rf&&rf.homeIsTeam1===false);
   SCANDATE=ocr.date||'';
@@ -1157,7 +1211,9 @@ function render(ocr, rf){
   var table='<div class="card"><div style="overflow-x:auto"><table><thead><tr><th></th><th>Team</th><th>Player</th><th title="individual comp points for this rubber">Pts</th><th>Sub</th><th>DNP</th><th>G1</th><th>G2</th><th>G3</th><th>G4</th><th>G5</th><th>Total</th><th>Games</th><th>Result</th><th></th></tr></thead><tbody>'+
     rows+'</tbody></table></div><div class="muted" style="margin-top:10px">Names come from the draw. <b>sub</b> = tick if a fill-in played (chip turns red when the scan disagrees with the draw). <b>DNP</b> = scratched / did not play (opponent gets the walkover). <b>Red</b> cell = invalid, incomplete, extra, or contradicts the G column; <b>amber</b> = total or games-won mismatch. Red <b>−</b> excludes a line (or removes a stored result on an APP line). Commit writes to the Master score sheet.</div>'+
     '<div id="tielive"></div><div style="margin-top:12px"><button class="cta" id="commitBtn2">Commit results</button> <button class="ghost" id="showjson">Show JSON</button></div><div id="jsonwrap"></div></div><div id="stagewrap"></div>';
+  head+='<div id="fixbox" style="margin-top:10px"></div>';
   $('out').innerHTML=head+'</div>'+table;
+  initFixBox(ocr,rf);
   [].forEach.call(document.querySelectorAll('td input'),function(inp){if(!inp.classList.contains('nm'))inp.oninput=recompute;});
   [].forEach.call(document.querySelectorAll('input.nm'),function(inp){inp.oninput=function(){updateSubTint(inp);recompute();};});
   [].forEach.call(document.querySelectorAll('.subx'),function(cb){cb.onchange=function(){
