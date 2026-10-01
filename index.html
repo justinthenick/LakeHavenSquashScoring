@@ -1222,15 +1222,7 @@ function setFixturesLoading_(isLoading,firstLoad,silent){
 function updateFixtureDetails(){
  if(!allFixtures.length||Date.now()-fixtureDetailsCacheTime<25000)return;
  fixtureDetailsCacheTime=Date.now();
- fetchFixtures(lastFixtureCacheDate).then(function(list){
-  var byId={};list.forEach(function(f){byId[f.id]=f;});
-  allFixtures.forEach(function(cached){
-   if(!byId[cached.id])return;
-   var fresh=byId[cached.id];
-   cached.status=fresh.status;cached.gamesP1=fresh.gamesP1;cached.gamesP2=fresh.gamesP2;cached.result=fresh.result;cached.actualPlayers=fresh.actualPlayers;cached.court=fresh.court;cached.scheduledTime=fresh.scheduledTime;
-  });
-  refreshFixtureViews_();
- }).catch(function(e){console.log('Background detail update skipped',e.msg||e.reason||'offline');});
+ fetchFixtures(lastFixtureCacheDate).then(renderFixtures).catch(function(e){console.log('Background detail update skipped',e.msg||e.reason||'offline');});
 }
 function loadFixturesForDate(date,force,retryOnTimeout,silent){
   if(!scriptConfigured()||!CONFIG.SHARED_SECRET){$('fixtures').innerHTML='<div class="hint">Enter the private club access code to load fixtures. <button class="cta ghost" id="connectBtn" style="margin-top:8px">Enter club code</button></div>';var cb=$('connectBtn');if(cb)cb.onclick=openSettings;return;}
