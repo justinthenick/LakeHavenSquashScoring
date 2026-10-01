@@ -625,8 +625,21 @@ function postResult(payload){
   // Send the whole result as one JSON param over JSONP, so the confirmation
   // comes back without a CORS-blocked response. Server de-dupes by matchId,
   // so a queued retry can never create a duplicate row.
-  var p={};for(var k in payload){if(payload.hasOwnProperty(k)&&k!=='secret')p[k]=payload[k];}
-  return callApi({action:'result',data:JSON.stringify(p)});
+  // The result rides in a GET URL, so send only what writeResult_ reads;
+  // dropped fields (colors, planned, points totals, event, venue) only bloat it.
+  var skip={secret:1,action:1,color1:1,color2:1,planned1:1,planned2:1,pointsP1:1,pointsP2:1,event:1,venue:1,queueError:1};
+  var p={};for(var k in payload){if(payload.hasOwnProperty(k)&&!skip[k])p[k]=payload[k];}
+  var data=JSON.stringify(p);
+  // Safe to retry: the server dedupes by matchId. A timeout or dropped
+  // request often means the first attempt landed, so retry quietly first.
+  function attempt(n){
+    return callApi({action:'result',data:data}).catch(function(err){
+      var transient=err&&(err.reason==='timeout'||err.reason==='network'||(err.reason==='server'&&err.retryable));
+      if(transient&&n<2)return new Promise(function(r){setTimeout(r,1500*(n+1));}).then(function(){return attempt(n+1);});
+      throw err;
+    });
+  }
+  return attempt(0);
 }
 
 /* offline queue -------------------------------------------------------- */
