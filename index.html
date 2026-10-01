@@ -66,6 +66,10 @@
   .cta{display:block;width:100%;padding:18px;margin-top:24px;border-radius:16px;
     background:var(--ink);color:#fff;font-size:18px;font-weight:800}
   .cta.ghost{background:transparent;color:var(--muted);font-weight:700;margin-top:10px;padding:12px}
+  .cta.pending{background:#d28a13;color:#fff;font-weight:800;font-size:18px;padding:18px;margin-top:16px;animation:pendingPulse 1.8s ease-in-out infinite}
+  .cta.pending.attn{background:#c0392b}
+  @keyframes pendingPulse{0%,100%{box-shadow:0 0 0 0 rgba(210,138,19,.55)}50%{box-shadow:0 0 0 10px rgba(210,138,19,0)}}
+  @media (prefers-reduced-motion:reduce){.cta.pending{animation:none}}
   .cta:disabled{opacity:.4}
   .toggle{display:flex;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff}
   .toggle button{flex:1;padding:14px;font-weight:800;font-size:16px;color:var(--muted)}
@@ -357,7 +361,7 @@
     <div class="hint" style="margin-bottom:6px">Tap a player's name on a fixture below to mark them as arrived.</div>
     <div id="fixtures" class="fixtures"><div class="hint">Looking for fixtures…</div></div>
     <button class="cta ghost" id="reloadFx">Reload fixtures</button>
-    <button class="cta ghost" id="pendingSetup">View pending results / retry sync</button>
+    <button class="cta ghost" id="pendingSetup" style="display:none">View pending results / retry sync</button>
 
     <div class="eyebrow" style="margin:22px 0 0">Selected fixture and substitutes</div>
     <label class="field">Player 1</label>
@@ -481,7 +485,7 @@
     <button class="cta" id="save">Save result</button>
     <button class="cta ghost" id="undoMatch">Undo last point</button>
     <button class="cta ghost" id="again">New match</button>
-    <button class="cta ghost" id="pendingOpen">View pending results</button>
+    <button class="cta ghost" id="pendingOpen" style="display:none">View pending results</button>
     <div class="hint" id="queueHint" style="margin-top:12px"></div>
   </div>
 </section>
@@ -676,7 +680,16 @@ function postResult(payload){
 /* offline queue -------------------------------------------------------- */
 var QKEY='cc_queue',flushInFlight=null;
 function queueKey(id){return 'cc_pending_'+encodeURIComponent(id);}
-function refreshQueueStatus(){if($('queueHint'))$('queueHint').textContent=queueStatus();}
+function refreshQueueStatus(){
+ if($('queueHint'))$('queueHint').textContent=queueStatus();
+ var q=loadQueue(),n=q.length,attn=q.some(function(p){return p.queueError;});
+ [['pendingSetup','pending results — tap to retry sync'],['pendingOpen','pending results — tap to retry sync']].forEach(function(b){
+  var el=$(b[0]);if(!el)return;
+  el.style.display=n?'':'none';
+  el.className='cta '+(n?'pending'+(attn?' attn':''):'ghost');
+  el.textContent=n?(n+' '+b[1]):'';
+ });
+}
 function loadQueue(){
  var legacy=[];try{legacy=JSON.parse(store.get(QKEY)||'[]');}catch(e){}
  legacy.forEach(function(p){var key=queueKey(p.matchId);if(!store.get(key))store.set(key,JSON.stringify(p));});
@@ -1875,7 +1888,7 @@ function goSummary(){
   $('save').disabled=!!M.locked;$('save').textContent=M.locked?'Saved or queued':'Save result';
   $('undoMatch').disabled=!!M.locked;   // reset per match — was staying "Saved ✓" and disabled
   banner('saveBanner','',null);
-  $('queueHint').textContent=queueStatus();
+  refreshQueueStatus();
   show('summary');
   cancelAutoSaveTimer();
   startAutoSaveTimer();
@@ -1968,6 +1981,7 @@ function showPending(){
  var q=loadQueue();$('pendingList').innerHTML=q.map(function(p){return '<div class="banner warn"><b>'+esc(p.player1)+' vs '+esc(p.player2)+'</b><br>'+esc(p.scoreLine||'')+'<br>'+esc(p.queueError||'Waiting for connection')+'</div>';}).join('')||'<p>No pending results.</p>';
  $('pendingSheet').classList.add('active');
 }
+refreshQueueStatus();
 $('pendingOpen').onclick=showPending;
 $('pendingSetup').onclick=showPending;
 $('pendingClose').onclick=function(){$('pendingSheet').classList.remove('active');};
