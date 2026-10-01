@@ -48,7 +48,14 @@ function doPost(e) {
   try {
     var body = JSON.parse(e.postData.contents || '{}');
     requireClubCode_(body.secret);
-    if (body.action === 'result') return json_(writeResult_(body));
+    if (body.action === 'result') {
+      // POST carries the full payload (no URL length limit) but the browser
+      // can't read the reply, so stash the outcome for resultStatus_ to hand back.
+      var r;
+      try { r = writeResult_(body); } catch (werr) { r = { ok:false, error:String(werr), retryable:true }; }
+      try { if (body.matchId) CacheService.getScriptCache().put('result:'+String(body.matchId), JSON.stringify(r), 600); } catch (cerr) {}
+      return json_(r);
+    }
     return json_({ ok:false, error:'unknown action' });
   } catch (err) { return json_({ ok:false, error:String(err) }); }
 }
@@ -441,4 +448,15 @@ function fixtureStatuses_(fixtures){
  var out={};fixtures.forEach(function(f){var m=byId[f.fixture_id],p=cached['progress:'+f.fixture_id];p=p?JSON.parse(p):null;
   out[f.fixture_id]=m?{status:/scratched/i.test(m.score_line||'')?'Scratched':'Played',result:m.score_line||m.games_p1+'–'+m.games_p2,actual1Id:m.player1_id,actual2Id:m.player2_id,gamesP1:m.games_p1,gamesP2:m.games_p2}:f.played?{status:'Needs review',result:'Played flag; result missing'}:p?{status:'Underway',result:p.games.join('–')+' games · '+p.points.join('–')+' points',actualNames:p.players,updated:p.updated}:{status:'Not yet played',result:''};
  });return out;
+}
+
+// Answers "did this POSTed result land?" - the stashed outcome if present,
+// otherwise whether the match is already in match_log (survives cache expiry).
+function resultStatus_(matchId) {
+  matchId = String(matchId || '');
+  if (!matchId || matchId.length > 160) return { ok:false, error:'Invalid match id' };
+  var hit = CacheService.getScriptCache().get('result:' + matchId);
+  if (hit) return { ok:true, found:true, result:JSON.parse(hit) };
+  var rows = requireSb_(sbGet_('match_log', 'select=match_id&match_id=eq.' + encodeURIComponent(matchId))).data;
+  return rows.length ? { ok:true, found:true, result:{ ok:true, duplicate:true } } : { ok:true, found:false };
 }

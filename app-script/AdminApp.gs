@@ -44,6 +44,7 @@ function doGet(e) {
       var action = e.parameter.action;
       if (action === 'fixtures') return out_({ ok:true, fixtures: readFixtures_(e.parameter.date) }, e);
       if (action === 'result')   return out_(writeResult_(JSON.parse(e.parameter.data || '{}')), e);
+      if (action === 'resultStatus') return out_(resultStatus_(e.parameter.matchId), e);
       if (action === 'progress') return out_(fixtureProgress_(JSON.parse(e.parameter.data||'{}')),e);
       if (action === 'liveProgress') return out_(getFixtureProgress_(e.parameter.fixtureId), e);
       if (action === 'venues') return out_(getVenues_(), e);

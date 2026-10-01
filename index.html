@@ -622,24 +622,55 @@ function fetchFixtures(date){
   return callApi(params).then(function(d){return d.fixtures||[];});
 }
 function postResult(payload){
-  // Send the whole result as one JSON param over JSONP, so the confirmation
-  // comes back without a CORS-blocked response. Server de-dupes by matchId,
-  // so a queued retry can never create a duplicate row.
-  // The result rides in a GET URL, so send only what writeResult_ reads;
-  // dropped fields (colors, planned, points totals, event, venue) only bloat it.
+  // Drop fields writeResult_ never reads, then POST the rest: a GET URL
+  // carrying the whole match (rally history, per-game timestamps) is long
+  // enough for Apps Script to drop it on longer matches. A browser can't read
+  // an Apps Script POST reply cross-origin, so the server stashes the outcome
+  // by matchId and we fetch it with resultStatus. Everything is idempotent
+  // server-side (dedupe by matchId), so re-sending is always safe.
   var skip={secret:1,action:1,color1:1,color2:1,planned1:1,planned2:1,pointsP1:1,pointsP2:1,event:1,venue:1,queueError:1};
   var p={};for(var k in payload){if(payload.hasOwnProperty(k)&&!skip[k])p[k]=payload[k];}
-  var data=JSON.stringify(p);
-  // Safe to retry: the server dedupes by matchId. A timeout or dropped
-  // request often means the first attempt landed, so retry quietly first.
-  function attempt(n){
-    return callApi({action:'result',data:data}).catch(function(err){
+  if(!scriptConfigured())return Promise.reject({reason:'unconfigured'});
+  if(!CONFIG.SHARED_SECRET)return Promise.reject({reason:'auth',msg:'Enter the private club access code in Settings.',retryable:false});
+  var body=JSON.stringify(Object.assign({secret:CONFIG.SHARED_SECRET,action:'result'},p));
+  function sendPost(){
+    return fetch(CONFIG.APPS_SCRIPT_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'text/plain;charset=utf-8'},body:body})
+      .then(function(){},function(){throw{reason:'network'};});
+  }
+  function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+  var delays=[1000,1000,1500,2000,2500];
+  function poll(i){
+    if(i>=delays.length)return Promise.resolve(null);
+    return sleep(delays[i]).then(function(){
+      return callApi({action:'resultStatus',matchId:p.matchId}).then(function(d){
+        if(d.found===undefined)throw{reason:'legacy'};
+        return d.found?d.result:poll(i+1);
+      },function(err){if(err&&(err.reason==='timeout'||err.reason==='network'))return poll(i+1);throw err;});
+    });
+  }
+  function settle(r){
+    if(!r)throw{reason:'timeout'};
+    if(r.ok===false)throw{reason:/access code|Scorer access/.test(r.error||'')?'auth':'server',msg:r.error||'rejected',retryable:!!r.retryable};
+    return r;
+  }
+  function viaGet(n){
+    return callApi({action:'result',data:JSON.stringify(p)}).catch(function(err){
       var transient=err&&(err.reason==='timeout'||err.reason==='network'||(err.reason==='server'&&err.retryable));
-      if(transient&&n<2)return new Promise(function(r){setTimeout(r,1500*(n+1));}).then(function(){return attempt(n+1);});
+      if(transient&&n<2)return sleep(1500*(n+1)).then(function(){return viaGet(n+1);});
       throw err;
     });
   }
-  return attempt(0);
+  function viaPost(n){
+    return sendPost().then(function(){return poll(0);}).then(function(r){
+      return settle(r);
+    }).catch(function(err){
+      if(err&&err.reason==='legacy')return viaGet(0);
+      var transient=err&&(err.reason==='timeout'||err.reason==='network'||(err.reason==='server'&&err.retryable));
+      if(transient&&n<2)return sleep(1500*(n+1)).then(function(){return viaPost(n+1);});
+      throw err;
+    });
+  }
+  return viaPost(0);
 }
 
 /* offline queue -------------------------------------------------------- */
