@@ -158,9 +158,9 @@
   .serve.left{margin-right:auto} .serve.right{margin-left:auto}
   .serve small{font-size:9px;position:absolute;bottom:5px;letter-spacing:.1em}
   .serve::after{content:'⇄';position:absolute;top:2px;right:5px;font-size:11px;opacity:.9;font-weight:800}
-  .msgbar{height:48px;display:flex;align-items:center;justify-content:center;padding:2px 12px 0;flex:none}
+  .msgbar{height:34px;display:flex;align-items:center;justify-content:center;padding:0 12px;flex:none}
   .msg{opacity:0;transform:translateY(-5px);transition:opacity .18s ease,transform .18s ease;
-    font-weight:800;font-size:15px;letter-spacing:.01em;padding:8px 18px;border-radius:999px;
+    font-weight:800;font-size:15px;letter-spacing:.01em;padding:4px 16px;border-radius:999px;
     background:#fff;color:var(--muted);border:1px solid var(--line);white-space:nowrap;
     box-shadow:0 2px 8px rgba(0,0,0,.06)}
   .msg.show{opacity:1;transform:none}
@@ -244,8 +244,8 @@
     .qcard .arrive-pill{font-size:14px;padding:2px 8px}
     .qcard .qresult{font-size:13px}
     .seq-badge{font-size:13px;padding:2px 10px}
-    .msgbar{height:88px}
-    .msg{font-size:30px;padding:16px 40px;border-radius:999px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
+    .msgbar{height:52px}
+    .msg{font-size:26px;padding:6px 34px;border-radius:999px;box-shadow:0 4px 18px rgba(0,0,0,.12)}
     .panel .pname{font-size:26px}
     .serveslot{height:78px}
     .serve{width:78px;height:78px;font-size:34px;border-radius:18px}
@@ -255,11 +255,11 @@
     .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:19%}
     .panel .tapcue{font-size:15px}
     .footbar button{padding:14px;font-size:19px}
-    .clockbar{font-size:24px;padding:8px 12px 18px}
-    .clockbar>*:not(:last-child){margin-right:32px}
-    .clockbar b{font-size:36px}
-    .clockbar .gamesTally{padding-right:22px}
-    .clockbar .gamesTally b{font-size:36px}
+    .clockbar{font-size:30px;padding:10px 12px 14px}
+    .clockbar>*:not(:last-child){margin-right:40px}
+    .clockbar b{font-size:64px}
+    .clockbar .gamesTally{padding-right:28px}
+    .clockbar .gamesTally b{font-size:64px}
   }
   /* Phone, portrait: Game/Games/Game-clock/Match-clock (+ the court tag)
      side by side just doesn't fit a phone's width, full stop - shrinking
@@ -267,12 +267,12 @@
      to two centred lines instead, which is airtight regardless of exact
      device width or how much extra the court tag adds. */
   @media (max-width:600px){
-    .clockbar{flex-wrap:wrap;row-gap:2px;font-size:13px;padding:4px 8px 8px}
+    .clockbar{flex-wrap:wrap;row-gap:2px;font-size:14px;padding:4px 8px 6px}
     .clockbar>*:not(:last-child){margin-right:8px}
-    .clockbar b{font-size:16px}
+    .clockbar b{font-size:22px}
     .clockbar .gamesTally{padding-right:0;border-right:none}
     .clockbar .gamesTally>*:not(:last-child){margin-right:6px}
-    .clockbar .gamesTally b{font-size:16px}
+    .clockbar .gamesTally b{font-size:22px}
   }
   @media (orientation:landscape) and (max-height:600px){
     .hname{display:block}
@@ -304,13 +304,13 @@
   @media (min-width:768px){ .footbar{padding:6px 14px calc(8px + var(--safe-bot))} .footbar>*:not(:last-child){margin-right:14px} .footbar button{padding:18px 12px;font-size:21px;border-radius:18px} }
   @media (min-width:768px) and (min-height:900px){ .footbar button{padding:28px 14px;font-size:28px;border-radius:22px} }
   .clockbar{flex:none;display:flex;align-items:center;justify-content:center;
-    padding:6px 12px 14px;color:var(--muted);font-weight:800;font-size:18px;line-height:1.2}
+    padding:6px 12px 10px;color:var(--muted);font-weight:800;font-size:22px;line-height:1.2}
   .clockbar>*:not(:last-child){margin-right:22px}
-  .clockbar b{color:var(--ink);font-size:26px;font-weight:900}
+  .clockbar b{color:var(--ink);font-size:40px;font-weight:900}
   .clockbar .gamesTally{display:flex;color:var(--ink);padding-right:16px;border-right:2px solid var(--line)}
   .clockbar .gamesTally>*:not(:last-child){margin-right:14px}
   .clockbar .gamesTally .gt-l{white-space:nowrap}
-  .clockbar .gamesTally b{font-size:26px}
+  .clockbar .gamesTally b{font-size:40px}
 
   /* ---------- between-games overlay ---------- */
   .overlay{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(15,22,30,.72);display:none;
@@ -950,7 +950,7 @@ function buildQueueNumberMap_(fixtures){
   return map;
 }
 
-function applyFixtureFilter(){
+function applyFixtureFilter(skipDetails){
   var date=$('fxDate').value||localDate();
   var onDate=allFixtures.filter(function(f){return String(f.scheduled||'')===date;});
   // populate comp + team options from this date (preserve a still-valid selection)
@@ -977,7 +977,7 @@ function applyFixtureFilter(){
   // only redraw if it actually changed - a full rebuild every 30s poll is
   // visibly jarring (loses scroll position, interrupts an in-progress tap).
   var fixtureIds = onDate.map(function(f) { return f.id; });
-  if(fixtureIds.length && scriptConfigured()) {
+  if(fixtureIds.length && scriptConfigured() && skipDetails!==true) {
     callApi({action:'arrivalStatus', fixtureIds:JSON.stringify(fixtureIds), date:date})
       .then(function(result) {
         var next = {};
@@ -987,6 +987,7 @@ function applyFixtureFilter(){
             next[key] = row.arrived_at;
           });
         }
+        applyLocalArrivals_(next);
         if(JSON.stringify(next)===JSON.stringify(arrivalStatus)) return;
         arrivalStatus = next;
         drawFixtures(shown, note, buildQueueNumberMap_(onDate));
@@ -1229,8 +1230,8 @@ function switchToFixture_(fx){
 // After marking/clearing an arrival or changing a sub nomination, refresh
 // whichever fixture view is actually visible (the setup screen's list, or
 // the score screen's queue bar) rather than assuming which one is active.
-function refreshFixtureViews_(){
-  if($('setup').classList.contains('active'))applyFixtureFilter();
+function refreshFixtureViews_(skipDetails){
+  if($('setup').classList.contains('active'))applyFixtureFilter(skipDetails===true);
   if($('score').classList.contains('active'))renderQueueBar_();
   if($('gap').classList.contains('active')&&lastTieData)renderTie(lastTieData);
 }
@@ -1242,6 +1243,7 @@ function refreshQueueData_(){
   Promise.all([
     callApi({action:'arrivalStatus', fixtureIds:JSON.stringify(ids), date:date}).then(function(result){
       (result.data||[]).forEach(function(row){arrivalStatus[row.fixture_id+':'+row.player_id]=row.arrived_at;});
+      applyLocalArrivals_(arrivalStatus);
     }),
     callApi({action:'subNominations', fixtureIds:JSON.stringify(ids)}).then(function(result){
       (result.data||[]).forEach(function(row){subNominations[row.fixture_id+':'+row.original_player_id]=row.sub_player_id;});
@@ -1319,26 +1321,33 @@ $('fxLine').onchange=applyFixtureFilter;
 $('fxReady').onchange=applyFixtureFilter;
 
 // Tap a player's name on a fixture card to toggle their arrival status.
-function toggleArrival_(fx, playerId, currentlyArrived, btn, retryOnTimeout){
+var localArrival_={}; // key -> {v:isoOrNull,t:ms}: taps not yet confirmed by a fetch, so stale reads can't undo them
+function applyLocalArrivals_(map){
+  var now=Date.now();
+  Object.keys(localArrival_).forEach(function(k){var o=localArrival_[k];if(now-o.t>20000){delete localArrival_[k];return;}if(o.v)map[k]=o.v;else delete map[k];});
+  return map;
+}
+// Updates the UI immediately and confirms with the server in the background
+// (markArrival/clearArrival are idempotent, so a timeout is retried once);
+// the tap is rolled back only if the server really rejects it.
+function toggleArrival_(fx, playerId, currentlyArrived, btn){
   if(!playerId){alert('This player is not linked to a player record yet.');return;}
   var date=fx.scheduled||$('fxDate').value||localDate();
-  btn.disabled=true;
-  if(retryOnTimeout===undefined)retryOnTimeout=true;
-  var call=currentlyArrived
-    ? callApi({action:'clearArrival', fixtureId:fx.id, playerId:playerId, date:date})
-    : callApi({action:'markArrival', fixtureId:fx.id, playerId:playerId, date:date});
-  call.then(function(){
-    var key=fx.id+':'+playerId;
-    if(currentlyArrived) delete arrivalStatus[key]; else arrivalStatus[key]=new Date().toISOString();
-    refreshFixtureViews_();
-  }).catch(function(err){
-    // markArrival/clearArrival are both idempotent server-side (upsert keyed
-    // on date+fixture+player; delete-if-exists), so a timeout can be safely
-    // retried once - the original call very likely already succeeded and a
-    // retry is a harmless no-op, rather than surfacing a scary error for
-    // what's actually just Apps Script's cold-start latency.
-    if(retryOnTimeout && err && err.reason==='timeout'){ toggleArrival_(fx,playerId,currentlyArrived,btn,false); return; }
-    btn.disabled=false;
+  var key=fx.id+':'+playerId,prev=arrivalStatus[key],nowIso=new Date().toISOString();
+  if(currentlyArrived)delete arrivalStatus[key];else arrivalStatus[key]=nowIso;
+  localArrival_[key]={v:currentlyArrived?null:nowIso,t:Date.now()};
+  refreshFixtureViews_(true);
+  function send(retry){
+    var params={action:currentlyArrived?'clearArrival':'markArrival',fixtureId:fx.id,playerId:playerId,date:date};
+    return callApi(params).catch(function(err){
+      if(retry&&err&&err.reason==='timeout')return send(false);
+      throw err;
+    });
+  }
+  send(true).catch(function(err){
+    delete localArrival_[key];
+    if(prev===undefined)delete arrivalStatus[key];else arrivalStatus[key]=prev;
+    refreshFixtureViews_(true);
     alert('Could not update arrival: '+(err.msg||err.reason||'unknown error'));
   });
 }
@@ -1694,16 +1703,31 @@ function openGap(){
   $('gap').classList.add('active');
 }
 var lastTieData=null;
+// Tie results (other lines' scores) only change when someone saves a result,
+// so between games show what we already have instantly and refresh quietly in
+// the background at most every TIE_TTL_MS - no blanking, no "Loading…".
+var tieCache_={},TIE_TTL_MS=300000;
+function tieKey_(id){var m=String(id||'').match(/^(.*)-R(\d+)-L\d+-M(\d+)$/);return m?m[1]+'|'+m[2]+'|'+m[3]:String(id||'');}
 function loadTie(retryOnTimeout){
   var el=$('gapTie'); if(!el)return;
   if(!activeFixture||!activeFixture.id||!scriptConfigured()){el.innerHTML='';return;}
   if(retryOnTimeout===undefined)retryOnTimeout=true;
-  el.innerHTML='<div class="hint" style="margin-top:14px">Loading the rest of the match…</div>';
-  callApi({action:'tie',fixtureId:activeFixture.id}).then(function(d){lastTieData=d;renderTie(d);}).catch(function(err){
+  var key=tieKey_(activeFixture.id),hit=tieCache_[key];
+  if(hit){
+    lastTieData=hit.d;renderTie(hit.d);
+    if(Date.now()-hit.t<TIE_TTL_MS)return;
+  } else {
+    el.innerHTML='<div class="hint" style="margin-top:14px">Loading the rest of the match…</div>';
+  }
+  callApi({action:'tie',fixtureId:activeFixture.id}).then(function(d){
+    var changed=!hit||JSON.stringify(hit.d)!==JSON.stringify(d);
+    tieCache_[key]={t:Date.now(),d:d};lastTieData=d;
+    if(changed&&$('gap').classList.contains('active'))renderTie(d);
+  }).catch(function(err){
     // Same Apps Script cold-start pattern as elsewhere - a plain read, so a
     // silent retry is always safe.
     if(retryOnTimeout && err && err.reason==='timeout'){ loadTie(false); return; }
-    el.innerHTML='';
+    if(!hit)el.innerHTML='';
   });
 }
 // Same played->current->ready numbering as the main queue bar, but computed
@@ -1912,6 +1936,7 @@ $('save').onclick=function(){
   store.del(queueKey(p.matchId));pendingPayload=null;
   banner('saveBanner','ok',r&&r.duplicate?'Result already saved and verified.':'Result saved.');
   $('save').textContent='Saved ✓';clearActive();
+  if(activeFixture)delete tieCache_[tieKey_(activeFixture.id)];
   // Refresh right away so this fixture shows as Played immediately (in the
   // fixture list and in any score-screen queue bar) rather than waiting on
   // the next 30s background poll.
