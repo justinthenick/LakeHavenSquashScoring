@@ -255,11 +255,6 @@
     .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:19%}
     .panel .tapcue{font-size:15px}
     .footbar button{padding:14px;font-size:19px}
-    .clockbar{font-size:30px;padding:10px 12px 14px}
-    .clockbar>*:not(:last-child){margin-right:40px}
-    .clockbar b{font-size:64px}
-    .clockbar .gamesTally{padding-right:28px}
-    .clockbar .gamesTally b{font-size:64px}
   }
   /* Phone, portrait: Game/Games/Game-clock/Match-clock (+ the court tag)
      side by side just doesn't fit a phone's width, full stop - shrinking
@@ -267,12 +262,6 @@
      to two centred lines instead, which is airtight regardless of exact
      device width or how much extra the court tag adds. */
   @media (max-width:600px){
-    .clockbar{flex-wrap:wrap;row-gap:2px;font-size:14px;padding:4px 8px 6px}
-    .clockbar>*:not(:last-child){margin-right:8px}
-    .clockbar b{font-size:22px}
-    .clockbar .gamesTally{padding-right:0;border-right:none}
-    .clockbar .gamesTally>*:not(:last-child){margin-right:6px}
-    .clockbar .gamesTally b{font-size:22px}
   }
   @media (orientation:landscape) and (max-height:600px){
     .hname{display:block}
@@ -291,10 +280,6 @@
     .arena>*:not(:last-child){margin-right:8px}
     .footbar{padding:4px 8px calc(4px + var(--safe-bot))}
     .footbar button{padding:8px;font-size:13px;border-radius:12px}
-    .clockbar{font-size:11px;padding:1px 8px}
-    .clockbar>*:not(:last-child){margin-right:10px}
-    .clockbar b{font-size:13px}
-    .clockbar .gamesTally{padding-right:8px}
   }
   .footbar{display:flex;padding:4px 10px calc(6px + var(--safe-bot))}
   .footbar>*:not(:last-child){margin-right:10px}
@@ -303,14 +288,33 @@
   /* Declared after the base rule on purpose - an earlier tablet override lost to it on source order. */
   @media (min-width:768px){ .footbar{padding:6px 14px calc(8px + var(--safe-bot))} .footbar>*:not(:last-child){margin-right:14px} .footbar button{padding:18px 12px;font-size:21px;border-radius:18px} }
   @media (min-width:768px) and (min-height:900px){ .footbar button{padding:28px 14px;font-size:28px;border-radius:22px} }
-  .clockbar{flex:none;display:flex;align-items:center;justify-content:center;
-    padding:6px 12px 10px;color:var(--muted);font-weight:800;font-size:22px;line-height:1.2}
-  .clockbar>*:not(:last-child){margin-right:22px}
-  .clockbar b{color:var(--ink);font-size:40px;font-weight:900}
-  .clockbar .gamesTally{display:flex;color:var(--ink);padding-right:16px;border-right:2px solid var(--line)}
-  .clockbar .gamesTally>*:not(:last-child){margin-right:14px}
-  .clockbar .gamesTally .gt-l{white-space:nowrap}
-  .clockbar .gamesTally b{font-size:40px}
+  /* Stats bar: heading row over value row, each stat a fixed-width centred column
+     (tabular digits + min-width in ch) so the clocks ticking never shift the layout.
+     Kept after all the media blocks above on purpose - same specificity, source order wins. */
+  .clockbar{flex:none;display:flex;align-items:flex-start;justify-content:center;flex-wrap:wrap;gap:2px 28px;padding:6px 12px 10px;color:var(--ink);font-weight:800;line-height:1.1}
+  .clockbar .stat{display:flex;flex-direction:column;align-items:center;text-align:center}
+  .clockbar .sl{font-size:16px;color:var(--ink);white-space:nowrap;margin-bottom:2px}
+  .clockbar b{display:block;font-size:40px;font-weight:900;color:var(--ink);font-variant-numeric:tabular-nums;text-align:center;min-width:5ch}
+  .clockbar #gameNo{min-width:2ch}
+  .clockbar #gamesLine{min-width:4ch}
+  @media (min-width:768px) and (min-height:900px){
+    .clockbar{gap:2px 44px;padding:10px 12px 14px}
+    .clockbar .sl{font-size:22px}
+    .clockbar b{font-size:56px}
+  }
+  @media (max-width:600px){
+    .clockbar{gap:0 14px;padding:4px 8px 4px}
+    .clockbar .sl{font-size:12px}
+    .clockbar b{font-size:26px}
+  }
+  @media (orientation:landscape) and (max-height:600px){
+    .clockbar{gap:0 18px;padding:1px 8px}
+    .clockbar .sl{font-size:11px}
+    .clockbar b{font-size:22px}
+  }
+  .scorehead .game{display:flex;align-items:center;justify-content:center;gap:8px}
+  .scorehead .game .court-pill{margin:0;flex:none;white-space:nowrap;font-size:13px;padding:3px 12px;cursor:pointer}
+  @media (min-width:768px) and (min-height:900px){ .scorehead .game .court-pill{font-size:20px;padding:4px 18px} }
 
   /* ---------- between-games overlay ---------- */
   .overlay{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(15,22,30,.72);display:none;
@@ -401,17 +405,17 @@
   <div class="scorehead">
     <button class="exit" id="exit">Exit</button>
     <span class="hname" id="hname0"></span>
-    <div class="game"><button id="abandonBtn" class="linklike">Match abandoned — nominate winner</button></div>
+    <div class="game"><span id="courtTag" class="court-pill" style="display:none"></span><button id="abandonBtn" class="linklike">Match abandoned — nominate winner</button></div>
     <span class="hname" id="hname1"></span>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
   <button type="button" id="queueToggle">Queue &amp; arrivals ▾</button>
   <div id="queueBar" class="queuebar"></div>
   <div class="clockbar tnum">
-    <span class="gamesTally"><span class="gt-l">Game <b id="gameNo">1</b></span><span class="gt-l">Games <b id="gamesLine">0–0</b></span></span>
-    <span>Game <b id="gameClock">00:00</b></span>
-    <span>Match <b id="matchClock">00:00</b></span>
-    <span id="courtTag" class="linklike" style="display:none"></span>
+    <div class="stat"><span class="sl">Game</span><b id="gameNo">1</b></div>
+    <div class="stat"><span class="sl">Games</span><b id="gamesLine">0–0</b></div>
+    <div class="stat"><span class="sl">Game clock</span><b id="gameClock">00:00</b></div>
+    <div class="stat"><span class="sl">Match clock</span><b id="matchClock">00:00</b></div>
   </div>
   <div class="msgbar"><span id="msg" class="msg"></span></div>
   <div class="arena">
@@ -487,7 +491,7 @@
     </table>
     <button class="cta" id="save">Save result</button>
     <button class="cta ghost" id="undoMatch">Undo last point</button>
-    <button class="cta ghost" id="again">New match</button>
+    <button class="cta ghost" id="again">Return to menu</button>
     <button class="cta ghost" id="pendingOpen" style="display:none">View pending results</button>
     <div class="hint" id="queueHint" style="margin-top:12px"></div>
   </div>
@@ -1569,7 +1573,9 @@ function updateCourtTag_(){
   var el=$('courtTag');
   if(!activeFixture||!activeFixture.venueName){el.style.display='none';el.onclick=null;return;}
   el.style.display='';
-  el.textContent=activeFixture.court?('Court '+activeFixture.court+(activeFixture.courtOverridden?' (this match only)':'')):'Set court';
+  el.className='court-pill'+(activeFixture.court?' set':'');
+  el.title=activeFixture.courtOverridden?'Court for this match only':'Tap to change the court for this match';
+  el.textContent=activeFixture.court?('Court '+activeFixture.court+(activeFixture.courtOverridden?' *':'')):'Set court';
   el.onclick=function(){
     var val=prompt('Court number for THIS MATCH ONLY (other lines of this tie are not affected). Leave blank to clear an override and follow the tie’s usual court:',activeFixture.court||'');
     if(val===null)return;
