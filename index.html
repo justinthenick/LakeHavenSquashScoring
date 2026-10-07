@@ -365,6 +365,7 @@
       <select id="fxLine"><option value="">All lines</option><option value="1">Line 1</option><option value="2">Line 2</option><option value="3">Line 3</option><option value="4">Line 4</option><option value="5">Line 5</option></select>
     </div>
     <div class="fxrow">
+      <select id="fxCourt" style="display:none"><option value="">All courts</option></select>
       <select id="fxReady"><option value="">All rubbers</option><option value="ready">Ready</option><option value="notready">Not ready</option></select>
     </div>
     <label style="display:block;margin:8px 0"><input id="hidePlayed" type="checkbox"> Hide played / scratched fixtures</label><input id="fxSearch" placeholder="Search player name…" autocomplete="off" style="margin-bottom:10px">
@@ -965,12 +966,21 @@ function applyFixtureFilter(skipDetails){
   syncSelect('fxComp','All comps',uniqSorted(onDate.map(function(f){return f.comp;})));
   var teams=[];onDate.forEach(function(f){if(f.team1)teams.push(f.team1);if(f.team2)teams.push(f.team2);});
   syncSelect('fxTeam','All teams',uniqSorted(teams));
+  var courtSet={},anyNoCourt=false;
+  onDate.forEach(function(f){if(f.court)courtSet[f.court]=1;else anyNoCourt=true;});
+  var courtVals=Object.keys(courtSet).map(Number).sort(function(a,b){return a-b;});
+  var courtSel=$('fxCourt'),courtCur=courtSel.value;
+  courtSel.innerHTML='<option value="">All courts</option>'+courtVals.map(function(c){return '<option value="'+c+'">Court '+c+'</option>';}).join('')+(courtVals.length&&anyNoCourt?'<option value="none">No court set</option>':'');
+  if(courtCur&&!(courtSet[courtCur]||(courtCur==='none'&&courtVals.length&&anyNoCourt)))courtCur='';
+  courtSel.value=courtCur;
+  courtSel.style.display=courtVals.length?'':'none';
   var comp=$('fxComp').value, team=$('fxTeam').value, line=$('fxLine').value, ready=$('fxReady').value, q=($('fxSearch').value||'').trim().toLowerCase();
   var shown=onDate.filter(function(f){
     if($('hidePlayed').checked&&['Played','Scratched'].indexOf(f.status)>=0)return false;
     if(comp&&String(f.comp||'')!==comp)return false;
     if(team&&f.team1!==team&&f.team2!==team)return false;
     if(line&&String(f.line||'')!==String(line))return false;
+    if(courtCur){if(courtCur==='none'){if(f.court)return false;}else if(String(f.court||'')!==courtCur)return false;}
     if(q&&(((f.player1||'')+' '+(f.player2||'')).toLowerCase().indexOf(q)<0))return false;
     if(ready){var r=fixtureReadiness_(f).ready;if(ready==='ready'&&!r)return false;if(ready==='notready'&&r)return false;}
     return true;
@@ -1326,6 +1336,7 @@ $('fxDate').onchange=function(){loadFixturesForDate(currentFxDate_(),false);};
 $('fxComp').onchange=applyFixtureFilter;
 $('fxTeam').onchange=applyFixtureFilter;
 $('fxLine').onchange=applyFixtureFilter;
+$('fxCourt').onchange=applyFixtureFilter;
 $('fxReady').onchange=applyFixtureFilter;
 
 // Tap a player's name on a fixture card to toggle their arrival status.
