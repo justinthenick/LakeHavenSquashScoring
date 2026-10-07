@@ -65,7 +65,7 @@
   .sw[aria-pressed="true"]{border-color:var(--ink);box-shadow:0 0 0 3px #fff inset}
   .sw.light{border-color:#c7cfd6}
   .sw.light[aria-pressed="true"]{border-color:var(--ink);box-shadow:none}
-  .sw.light[aria-pressed="true"]::after{content:'\2713';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:24px;font-weight:900}
+  .sw[aria-pressed="true"]::after{content:'\2713';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--tick,#fff);font-size:24px;font-weight:900}
   .cta{display:block;width:100%;padding:18px;margin-top:24px;border-radius:16px;
     background:var(--ink);color:#fff;font-size:18px;font-weight:800}
   .cta.ghost{background:transparent;color:var(--muted);font-weight:700;margin-top:10px;padding:12px}
@@ -752,6 +752,7 @@ function buildSwatches(host,which){
   PALETTE.forEach(function(c){
     var b=document.createElement('button');b.className='sw';b.style.background=c;
     if(c==='#ffffff')b.classList.add('light');
+    b.style.setProperty('--tick',isLight(c)?'#14202b':'#fff');
     b.setAttribute('aria-pressed',(chosen[which]===c)?'true':'false');
     b.onclick=function(){chosen[which]=c;
       [].slice.call(host.children).forEach(function(x){x.setAttribute('aria-pressed','false');});
