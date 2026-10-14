@@ -1161,6 +1161,21 @@ function buildFixBody(cal,ocr,rf,comp){
     $('fxTie').innerHTML=r.ties.map(function(t,i){return '<option value="'+i+'"'+(i===pick?' selected':'')+'>'+tieLabel(t)+'</option>';}).join('');
   }
   $('fxRound').onchange=fillTies;fillTies();
+  // Suggest the tie from the team numbers/names alone (the scanned date is often what's wrong,
+  // e.g. year misread), preferring one whose day+month matches the scan.
+  var cands=[];
+  function sameTeam(no,name,t,which){return (no!=null&&no!==''&&String(t[which+'No'])===String(no))||(name&&String(t[which]||'').toLowerCase()===String(name).toLowerCase());}
+  rounds.forEach(function(r,ri){r.ties.forEach(function(t,ti){
+    var fwd=sameTeam(ocr.teamA,ocr.teamAName,t,'team1')&&sameTeam(ocr.teamB,ocr.teamBName,t,'team2');
+    var rev=sameTeam(ocr.teamA,ocr.teamAName,t,'team2')&&sameTeam(ocr.teamB,ocr.teamBName,t,'team1');
+    if(fwd||rev)cands.push({ri:ri,ti:ti,t:t,swap:!fwd&&rev,md:(ocr.date&&t.scheduled&&String(t.scheduled).slice(5)===String(ocr.date).slice(5))?0:1});
+  });});
+  if(cands.length){
+    cands.sort(function(x,y){return x.md-y.md||x.ri-y.ri;});
+    var best=cands[0];
+    $('fxRound').value=String(best.ri);fillTies();$('fxTie').value=String(best.ti);$('fxSwap').checked=best.swap;
+    $('fxMsg').innerHTML='<span style="color:var(--ok);font-weight:800">Suggested from the teams: Round '+rounds[best.ri].round+' &middot; '+esc(best.t.scheduled||'no date')+(best.md?' (date not matched &mdash; check the round)':' (day and month match the scan)')+(cands.length>1?'. '+cands.length+' ties have these teams, so check it is the right round.':'.')+'</span>';
+  }
   $('fxApply').onclick=function(){
     var r=rounds[+$('fxRound').value],t=r&&r.ties[+$('fxTie').value];if(!t)return;
     var swap=$('fxSwap').checked,A=swap?{no:t.team2No,name:t.team2}:{no:t.team1No,name:t.team1},B=swap?{no:t.team1No,name:t.team1}:{no:t.team2No,name:t.team2};
