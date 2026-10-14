@@ -150,6 +150,7 @@ function readFixtures_(date) {
     return {
       status:statuses[f.fixture_id].status,result:statuses[f.fixture_id].result,actualPlayers:statuses[f.fixture_id].actualNames||[playerNames[statuses[f.fixture_id].actual1Id]||'',playerNames[statuses[f.fixture_id].actual2Id]||''],
       gamesP1:statuses[f.fixture_id].gamesP1,gamesP2:statuses[f.fixture_id].gamesP2,
+      durationSec:statuses[f.fixture_id].durationSec||0,startTime:statuses[f.fixture_id].startTime||'',endTime:statuses[f.fixture_id].endTime||'',gameDetail:statuses[f.fixture_id].gameDetail||[],
       id: f.fixture_id, player1Id:f.player1_id, player2Id:f.player2_id,
       pointsToWin:comp.points_per_game||15,winByTwo:!!comp.win_by_two,bestOf:comp.best_of||5,
       player1: playerNames[f.player1_id] || '', player2: playerNames[f.player2_id] || '',
@@ -442,11 +443,28 @@ function fixtureStatuses_(fixtures){
  // Filter match_log by the (small) set of comps in play rather than by every
  // fixture_id individually - far fewer distinct values, so one query is safe.
  var compRefs=uniq_(fixtures.map(function(f){return f.comp_ref;}).filter(Boolean));
- var logs=compRefs.length?requireSb_(sbGet_('match_log','select=fixture_id,games_p1,games_p2,score_line,player1_id,player2_id&comp_ref=in.('+compRefs.join(',')+')')).data:[];
+ var logs=compRefs.length?requireSb_(sbGet_('match_log','select=match_id,fixture_id,games_p1,games_p2,score_line,player1_id,player2_id,duration_sec&comp_ref=in.('+compRefs.join(',')+')')).data:[];
  var byId={};logs.forEach(function(m){byId[m.fixture_id]=m;});
+ // Timing for played matches on these fixtures only: per-game rows from game_log,
+ // times shown in club local time. Best-effort - a failure just means no timing shown.
+ var timing={};
+ try{
+  var mids=[];fixtures.forEach(function(f){var m=byId[f.fixture_id];if(m&&m.match_id)mids.push(m.match_id);});
+  if(mids.length){
+   var tz='Australia/Sydney';
+   var clock=function(ts){if(!ts)return '';try{var d=new Date(ts);if(isNaN(d.getTime()))return '';return Utilities.formatDate(d,tz,'h:mm a');}catch(e){return '';}};
+   var gl=requireSb_(sbGet_('game_log','select=match_id,game_no,points_p1,points_p2,time_start,time_end,duration&match_id=in.('+mids.map(function(i){return '"'+String(i).replace(/"/g,'')+'"';}).join(',')+')')).data;
+   var byMatch={};gl.forEach(function(g){(byMatch[g.match_id]=byMatch[g.match_id]||[]).push(g);});
+   Object.keys(byMatch).forEach(function(id){
+    var gs=byMatch[id].sort(function(a,b){return a.game_no-b.game_no;});
+    timing[id]={startTime:clock(gs[0].time_start),endTime:clock(gs[gs.length-1].time_end),
+     gameDetail:gs.map(function(g){return {n:g.game_no,p1:g.points_p1,p2:g.points_p2,start:clock(g.time_start),end:clock(g.time_end),dur:g.duration||0};})};
+   });
+  }
+ }catch(e){Logger.log('timing lookup skipped: '+e);}
  var cache=CacheService.getScriptCache(),cached={};for(var i=0;i<fixtures.length;i+=100){var part=cache.getAll(fixtures.slice(i,i+100).map(function(f){return 'progress:'+f.fixture_id;}));Object.keys(part).forEach(function(k){cached[k]=part[k];});}
  var out={};fixtures.forEach(function(f){var m=byId[f.fixture_id],p=cached['progress:'+f.fixture_id];p=p?JSON.parse(p):null;
-  out[f.fixture_id]=m?{status:/scratched/i.test(m.score_line||'')?'Scratched':'Played',result:m.score_line||m.games_p1+'–'+m.games_p2,actual1Id:m.player1_id,actual2Id:m.player2_id,gamesP1:m.games_p1,gamesP2:m.games_p2}:f.played?{status:'Needs review',result:'Played flag; result missing'}:p?{status:'Underway',result:p.games.join('–')+' games · '+p.points.join('–')+' points',actualNames:p.players,updated:p.updated}:{status:'Not yet played',result:''};
+  out[f.fixture_id]=m?{status:/scratched/i.test(m.score_line||'')?'Scratched':'Played',result:m.score_line||m.games_p1+'–'+m.games_p2,actual1Id:m.player1_id,actual2Id:m.player2_id,gamesP1:m.games_p1,gamesP2:m.games_p2,durationSec:m.duration_sec||0,startTime:(timing[m.match_id]||{}).startTime||'',endTime:(timing[m.match_id]||{}).endTime||'',gameDetail:(timing[m.match_id]||{}).gameDetail||[]}:f.played?{status:'Needs review',result:'Played flag; result missing'}:p?{status:'Underway',result:p.games.join('–')+' games · '+p.points.join('–')+' points',actualNames:p.players,updated:p.updated}:{status:'Not yet played',result:''};
  });return out;
 }
 

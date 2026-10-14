@@ -96,6 +96,9 @@
   .arrive-pill:disabled{opacity:0.5}
   .court-pill{font:inherit;font-weight:700;border:1px dashed #4338ca;background:#eef2ff;color:#3730a3;border-radius:20px;padding:2px 10px;margin:4px 2px 0 0}
   .court-pill.set{border-style:solid}
+  .fxdetail{margin-top:8px;padding:8px 10px;border-radius:10px;background:#f4f7fa;border:1px solid var(--line)}
+  .fxg{display:grid;grid-template-columns:70px 56px 52px 1fr;gap:8px;align-items:baseline;padding:3px 0;font-size:14px}
+  .fxg .fxgt{color:var(--muted);font-size:13px}
   .sub-link{display:block;background:none;border:none;color:#2563eb;font-weight:700;font-size:12px;padding:2px 0;text-decoration:underline;text-align:left}
   .seq-badge{display:inline-block;min-width:22px;text-align:center;border-radius:12px;padding:1px 8px;font-size:12px;font-weight:800;margin-top:4px;background:#dff2e5;color:#1c6b3d}
   .seq-badge.nyr{background:#f3f4f6;color:var(--muted)}
@@ -1041,6 +1044,28 @@ function applyFixtureFilter(skipDetails){
       });
   }
 }
+var expandedFx_={}; // fixtureId -> true: played rows the user has opened for game-by-game detail
+function fmtDur_(sec){
+  sec=Math.round(Number(sec)||0);if(sec<=0)return '';
+  if(sec<3600)return Math.max(1,Math.round(sec/60))+' min';
+  return Math.floor(sec/3600)+'h '+('0'+Math.round((sec%3600)/60)).slice(-2)+'m';
+}
+function fixtureTimingLine_(fx){
+  var bits=[];
+  if(fx.startTime)bits.push('Start '+fx.startTime);
+  if(fx.endTime)bits.push('End '+fx.endTime);
+  var d=fmtDur_(fx.durationSec);if(d)bits.push(d);
+  return bits.join(' · ');
+}
+function fixtureGameDetailEl_(fx){
+  var box=document.createElement('div');box.className='fxdetail';
+  var rows=(fx.gameDetail||[]).map(function(g){
+    var span=(g.start&&g.end)?(g.start+' – '+g.end):'';
+    return '<div class="fxg"><b>Game '+g.n+'</b><span class="tnum">'+g.p1+'–'+g.p2+'</span><span class="tnum">'+(g.dur?fmtT(g.dur):'')+'</span><span class="fxgt">'+esc(span)+'</span></div>';
+  }).join('');
+  box.innerHTML=rows+'<div class="hint" style="margin:6px 0 0">Changes to recorded results are managed in Comp Admin.</div>';
+  return box;
+}
 function drawFixtures(list,note,seqMap,swapNote){
   var host=$('fixtures');
   host.innerHTML=(swapNote?'<div class="banner ok">'+esc(swapNote)+'</div>':'')+(note?'<div class="hint">'+esc(note)+'</div>':'');
@@ -1049,7 +1074,13 @@ function drawFixtures(list,note,seqMap,swapNote){
     var row=document.createElement('div');row.className='fx';row.style.borderLeft='5px solid '+(fx.status==='Played'?'#238755':fx.status==='Underway'?'#d28a13':fx.status==='Scratched'?'#9c5665':'#8c99aa');
 
     var main=document.createElement('div');main.style.flex='1';main.style.minWidth='0';main.style.cursor='pointer';
-    main.onclick=function(){if(['Played','Scratched','Needs review'].indexOf(fx.status)>=0){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');return;}applyFixture(fx);};
+    var detailEl=null,chev=null;
+    main.onclick=function(){
+      if(fx.status==='Played'&&(fx.gameDetail||[]).length){
+        var open=!expandedFx_[fx.id];expandedFx_[fx.id]=open;
+        if(detailEl)detailEl.style.display=open?'':'none';if(chev)chev.textContent=open?'⌄':'›';return;
+      }
+      if(['Played','Scratched','Needs review'].indexOf(fx.status)>=0){alert(fx.status+': '+(fx.result||'')+'. Changes to recorded results are managed in Comp Admin.');return;}applyFixture(fx);};
 
     var playersLine=document.createElement('div');
     var p1=buildPlayerPill_(fx,fx.player1Id,fx.player1||'?');
@@ -1079,13 +1110,18 @@ function drawFixtures(list,note,seqMap,swapNote){
     var statusLabel=((fx.status||'Not yet played')==='Not yet played'&&queueNum)?('Queued at position #'+queueNum):(fx.status||'Not yet played');
     statusLine.innerHTML='<b>'+esc(statusLabel)+'</b>'+(fx.result?' · '+esc(fx.result):'');
     main.appendChild(statusLine);
+    if(fx.status==='Played'){
+      var tl=fixtureTimingLine_(fx);
+      if(tl){var tEl=document.createElement('small');tEl.style.display='block';tEl.textContent=tl;main.appendChild(tEl);}
+      if((fx.gameDetail||[]).length){detailEl=fixtureGameDetailEl_(fx);detailEl.style.display=expandedFx_[fx.id]?'':'none';main.appendChild(detailEl);}
+    }
 
     if((fx.actualPlayers||[]).some(function(n,i){return n&&n!==fx['player'+(i+1)];})){
       var pl=document.createElement('small');pl.textContent='Played by '+fx.actualPlayers.join(' vs ');main.appendChild(pl);
     }
 
     row.appendChild(main);
-    var chev=document.createElement('span');chev.textContent='›';chev.style.cursor='pointer';chev.onclick=main.onclick;
+    chev=document.createElement('span');chev.textContent=(expandedFx_[fx.id]&&detailEl)?'⌄':'›';chev.style.cursor='pointer';chev.onclick=main.onclick;
     row.appendChild(chev);
     host.appendChild(row);
   });
