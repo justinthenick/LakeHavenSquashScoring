@@ -1113,6 +1113,7 @@ function drawFixtures(list,note,seqMap,swapNote){
     if(fx.status==='Played'){
       var tl=fixtureTimingLine_(fx);
       if(tl){var tEl=document.createElement('small');tEl.style.display='block';tEl.textContent=tl;main.appendChild(tEl);}
+      if(fx.timingError&&!window.__timingWarned){window.__timingWarned=true;console.warn('Game timing unavailable:',fx.timingError);}
       if((fx.gameDetail||[]).length){detailEl=fixtureGameDetailEl_(fx);detailEl.style.display=expandedFx_[fx.id]?'':'none';main.appendChild(detailEl);}
     }
 
