@@ -218,7 +218,7 @@ function enterWatch_(){
   show('watch');
   $('cwDate').value=cfg.date||localDate();
   populateSwitcher_();
-  poll_();
+  poll_(true);
   // Two cadences: who's on this court, the tie, arrivals - all change rarely,
   // so that stays on the slower cycle. The live score itself needs to feel
   // immediate, so it gets its own much faster, much cheaper poll (just the
@@ -227,7 +227,7 @@ function enterWatch_(){
   clearInterval(liveTimer);liveTimer=setInterval(pollLive_,1500);
   clearInterval(tickTimer);tickTimer=setInterval(tickClock_,1000);
 }
-document.addEventListener('visibilitychange',function(){if(!document.hidden&&cfg.token&&cfg.venueId&&cfg.court)poll_();});
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&cfg.token&&cfg.venueId&&cfg.court)poll_(true);});
 function populateSwitcher_(){
   $('cwVenue').innerHTML=ALLVENUES.length?ALLVENUES.map(function(v){return '<option value="'+esc(v.id)+'">'+esc(v.name)+'</option>';}).join(''):'<option>'+esc(cfg.venueName)+'</option>';
   if(cfg.venueId)$('cwVenue').value=cfg.venueId;
@@ -241,10 +241,10 @@ $('cwVenue').onchange=function(){
   var v=ALLVENUES.filter(function(x){return x.id===$('cwVenue').value;})[0];
   if(!v)return;
   cfg.venueId=v.id;cfg.venueName=v.name;cfg.courtCount=v.court_count;cfg.court='1';
-  saveCfg_();populateSwitcher_();poll_();
+  saveCfg_();populateSwitcher_();poll_(true);
 };
-$('cwCourt').onchange=function(){cfg.court=$('cwCourt').value;saveCfg_();poll_();};
-$('cwDate').onchange=function(){cfg.date=$('cwDate').value;saveCfg_();poll_();};
+$('cwCourt').onchange=function(){cfg.court=$('cwCourt').value;saveCfg_();poll_(true);};
+$('cwDate').onchange=function(){cfg.date=$('cwDate').value;saveCfg_();poll_(true);};
 
 var pollTimer=null,liveTimer=null,tickTimer=null;
 var allFixtures=[],arrivalStatus={},subNominations={},unavailableIds={};
@@ -268,8 +268,15 @@ function tieSiblings_(all,fx){
     .sort(function(a,b){return (a.line||0)-(b.line||0);});
 }
 
-function poll_(){
+var lastFullPoll=0;
+// The fixtures refresh is the expensive call (database lookups against a daily-capped
+// quota). Keep the quick cadence only while a match on this court is live; otherwise
+// check every 90s. Callers that mean "now" (court/date change, tab revisit) pass force.
+function poll_(force){
   if(document.hidden||!cfg.token||!cfg.venueId||!cfg.court)return;
+  var live=!!(lastCurrent&&lastCurrent.status==='Underway');
+  if(force!==true&&!live&&Date.now()-lastFullPoll<90000)return;
+  lastFullPoll=Date.now();
   var date=$('cwDate').value||cfg.date||localDate();
   callApi({action:'fixtures',date:date}).then(function(res){
     allFixtures=res.fixtures||[];
@@ -358,7 +365,7 @@ function toggleArrival_(fx,playerId,currentlyArrived,btn,retryOnTimeout){
   var date=fx.scheduled||localDate();
   var call=currentlyArrived?callApi({action:'clearArrival',fixtureId:fx.id,playerId:playerId,date:date})
     :callApi({action:'markArrival',fixtureId:fx.id,playerId:playerId,date:date});
-  call.then(function(){poll_();}).catch(function(err){
+  call.then(function(){poll_(true);}).catch(function(err){
     if(retryOnTimeout&&err&&err.reason==='timeout'){toggleArrival_(fx,playerId,currentlyArrived,btn,false);return;}
     btn.disabled=false;
     alert('Could not update arrival: '+(err.msg||err.reason||'unknown error'));

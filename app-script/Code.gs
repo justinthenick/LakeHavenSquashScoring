@@ -99,7 +99,7 @@ function uniq_(arr) {
 }
 
 function readFixtures_(date) {
-  return cacheJson_('fx:'+fxGen_()+':'+(date||''),15,function(){return readFixturesUncached_(date);});
+  return cacheJson_('fx:'+fxGen_()+':'+(date||''),30,function(){return readFixturesUncached_(date);});
 }
 function readFixturesUncached_(date) {
   var tz = 'Australia/Sydney';

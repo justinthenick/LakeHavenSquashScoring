@@ -2087,10 +2087,25 @@ function publishProgress(){
    gameNo:M.games.length+1})}).catch(function(e){console.warn('Live fixture status not updated',e.msg||e.reason||'offline');}).finally(function(){progressBusy=false;});
 }
 setInterval(function(){if(M&&!M.over)publishProgress();},30000);
-setInterval(function(){
-  if(document.visibilityState!=='visible'||!CONFIG.SHARED_SECRET)return;
+// Background refresh only while someone is actually using the app: a tab left open on a
+// powered screen overnight used to poll every 30s all night and exhausted the daily
+// UrlFetch quota. Idle (no touch/key for IDLE_MS) pauses it; the next touch refreshes at once.
+var lastActivity=Date.now(),IDLE_MS=15*60*1000,wasIdle=false;
+function backgroundRefresh_(){
+  if(!CONFIG.SHARED_SECRET)return;
   if($('setup').classList.contains('active'))updateFixtureDetails();
   else if($('score').classList.contains('active'))refreshQueueData_();
+}
+['pointerdown','keydown','touchstart','wheel'].forEach(function(ev){
+  window.addEventListener(ev,function(){
+    lastActivity=Date.now();
+    if(wasIdle){wasIdle=false;if(document.visibilityState==='visible')backgroundRefresh_();}
+  },{passive:true,capture:true});
+});
+setInterval(function(){
+  if(document.visibilityState!=='visible')return;
+  if(Date.now()-lastActivity>IDLE_MS){wasIdle=true;return;}
+  backgroundRefresh_();
 },30000);
 </script>
 </body>
