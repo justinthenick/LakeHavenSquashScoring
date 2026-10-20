@@ -30,6 +30,21 @@ function prop_(name) {
   return v;
 }
 
+/* ---- Response caching: UrlFetch (every Supabase call) is capped per day (20k on a
+   consumer account), and many devices poll fixtures. A short shared cache makes N
+   pollers cost about one lookup. Writes call bumpFxGen_() to invalidate it all. ---- */
+function fxGen_(){var c=CacheService.getScriptCache(),g=c.get('fxgen');if(!g){g=String(Date.now());c.put('fxgen',g,21600);}return g;}
+function bumpFxGen_(){try{CacheService.getScriptCache().put('fxgen',String(Date.now()),21600);}catch(e){}}
+function cacheJson_(key,ttl,loader){
+  var c=CacheService.getScriptCache(),hit=null;
+  try{hit=c.get(key);}catch(e){}
+  if(hit){try{return JSON.parse(hit);}catch(e){}}
+  var v=loader();
+  try{var str=JSON.stringify(v);if(str.length<90000)c.put(key,str,ttl);}catch(e){}
+  return v;
+}
+function staticRows_(table,query){return cacheJson_('st:'+fxGen_()+':'+table+':'+query,600,function(){return requireSb_(sbGet_(table,query)).data;});}
+
 // Case-insensitive sheet lookup so 'fixtures' / 'Fixtures' / 'GameLog' etc all resolve.
 function findSheet_(ss, name) {
   var t = String(name).toLowerCase();
@@ -53,6 +68,7 @@ function doPost(e) {
       // can't read the reply, so stash the outcome for resultStatus_ to hand back.
       var r;
       try { r = writeResult_(body); } catch (werr) { r = { ok:false, error:String(werr), retryable:true }; }
+      bumpFxGen_();
       try { if (body.matchId) CacheService.getScriptCache().put('result:'+String(body.matchId), JSON.stringify(r), 600); } catch (cerr) {}
       return json_(r);
     }
@@ -83,6 +99,9 @@ function uniq_(arr) {
 }
 
 function readFixtures_(date) {
+  return cacheJson_('fx:'+fxGen_()+':'+(date||''),15,function(){return readFixturesUncached_(date);});
+}
+function readFixturesUncached_(date) {
   var tz = 'Australia/Sydney';
   var query = 'select=fixture_id,round,line,scheduled,comp_ref,team1_id,team2_id,player1_id,player2_id,played&player1_id=not.is.null';
   var queryScoped = false;
@@ -127,13 +146,13 @@ function readFixtures_(date) {
   // Club rosters are small (dozens-hundreds of rows) - one unfiltered, paginated
   // fetch per table is far cheaper than batching a long id list into many calls.
   var playerNames = {}, teamNames = {};
-  requireSb_(sbGet_('players', 'select=player_id,name')).data.forEach(function(p){ playerNames[p.player_id] = p.name; });
-  requireSb_(sbGet_('teams', 'select=team_id,team_name')).data.forEach(function(t){ teamNames[t.team_id] = t.team_name; });
+  staticRows_('players','select=player_id,name').forEach(function(p){ playerNames[p.player_id] = p.name; });
+  staticRows_('teams','select=team_id,team_name').forEach(function(t){ teamNames[t.team_id] = t.team_name; });
 
-  var rules={};requireSb_(sbGet_('comps','select=comp_ref,points_per_game,win_by_two,best_of,venue_id')).data.forEach(function(c){rules[c.comp_ref]=c;});
-  var venueById={};requireSb_(sbGet_('venues','select=id,name,court_count')).data.forEach(function(v){venueById[v.id]=v;});
-  var tieCourt={};requireSb_(sbGet_('tie_court_allocations','select=comp_ref,round,tie_number,court_number')).data.forEach(function(a){tieCourt[a.comp_ref+'|'+a.round+'|'+a.tie_number]=a.court_number;});
-  var fixtureOverride={};requireSb_(sbGet_('fixture_court_overrides','select=fixture_id,court_number')).data.forEach(function(o){fixtureOverride[o.fixture_id]=o.court_number;});
+  var rules={};staticRows_('comps','select=comp_ref,points_per_game,win_by_two,best_of,venue_id').forEach(function(c){rules[c.comp_ref]=c;});
+  var venueById={};staticRows_('venues','select=id,name,court_count').forEach(function(v){venueById[v.id]=v;});
+  var tieCourt={};staticRows_('tie_court_allocations','select=comp_ref,round,tie_number,court_number').forEach(function(a){tieCourt[a.comp_ref+'|'+a.round+'|'+a.tie_number]=a.court_number;});
+  var fixtureOverride={};staticRows_('fixture_court_overrides','select=fixture_id,court_number').forEach(function(o){fixtureOverride[o.fixture_id]=o.court_number;});
   return fixtures.map(function(f){
     var sched = '';
     if (f.scheduled) {
@@ -412,7 +431,7 @@ function json_(obj) {
 
 function fixtureProgress_(b){
  var id=String(b.fixtureId||''),session=String(b.matchId||'');if(!id||!session||id.length>120||session.length>160)throw new Error('Invalid fixture progress.');
- var fx=requireSb_(sbGet_('fixtures','select=played&fixture_id=eq.'+encodeURIComponent(id))).data;
+ var fx=cacheJson_('fxp:'+fxGen_()+':'+id,30,function(){return requireSb_(sbGet_('fixtures','select=played&fixture_id=eq.'+encodeURIComponent(id))).data;});
  if(!fx.length||fx[0].played)return {ok:true,finished:true};
  function pair(v){if(!Array.isArray(v)||v.length!==2||v.some(function(n){return !Number.isInteger(n)||n<0||n>99;}))throw new Error('Invalid progress score.');return v;}
  function secs(v){v=Number(v);return (Number.isFinite(v)&&v>=0&&v<=36000)?Math.round(v):0;}

@@ -223,10 +223,11 @@ function enterWatch_(){
   // so that stays on the slower cycle. The live score itself needs to feel
   // immediate, so it gets its own much faster, much cheaper poll (just the
   // one cached blob, not a full fixtures fetch) once a live match is found.
-  clearInterval(pollTimer);pollTimer=setInterval(poll_,8000);
+  clearInterval(pollTimer);pollTimer=setInterval(poll_,20000);
   clearInterval(liveTimer);liveTimer=setInterval(pollLive_,1500);
   clearInterval(tickTimer);tickTimer=setInterval(tickClock_,1000);
 }
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&cfg.token&&cfg.venueId&&cfg.court)poll_();});
 function populateSwitcher_(){
   $('cwVenue').innerHTML=ALLVENUES.length?ALLVENUES.map(function(v){return '<option value="'+esc(v.id)+'">'+esc(v.name)+'</option>';}).join(''):'<option>'+esc(cfg.venueName)+'</option>';
   if(cfg.venueId)$('cwVenue').value=cfg.venueId;
@@ -268,7 +269,7 @@ function tieSiblings_(all,fx){
 }
 
 function poll_(){
-  if(!cfg.token||!cfg.venueId||!cfg.court)return;
+  if(document.hidden||!cfg.token||!cfg.venueId||!cfg.court)return;
   var date=$('cwDate').value||cfg.date||localDate();
   callApi({action:'fixtures',date:date}).then(function(res){
     allFixtures=res.fixtures||[];
@@ -312,7 +313,7 @@ function pollLive_(){
   // (1.5s polling can otherwise overlap under a slow connection, and an
   // older response landing after a newer one would visibly roll the score
   // back for a moment).
-  if(!lastCurrent||lastCurrent.status!=='Underway'||liveBusy)return;
+  if(document.hidden||!lastCurrent||lastCurrent.status!=='Underway'||liveBusy)return;
   liveBusy=true;
   var fx=lastCurrent;
   callApi({action:'liveProgress',fixtureId:fx.id},false).then(function(r){

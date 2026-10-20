@@ -43,7 +43,7 @@ function doGet(e) {
       requireClubCode_(e.parameter.secret);
       var action = e.parameter.action;
       if (action === 'fixtures') return out_({ ok:true, fixtures: readFixtures_(e.parameter.date) }, e);
-      if (action === 'result')   return out_(writeResult_(JSON.parse(e.parameter.data || '{}')), e);
+      if (action === 'result')   { var wr = writeResult_(JSON.parse(e.parameter.data || '{}')); bumpFxGen_(); return out_(wr, e); }
       if (action === 'resultStatus') return out_(resultStatus_(e.parameter.matchId), e);
       if (action === 'progress') return out_(fixtureProgress_(JSON.parse(e.parameter.data||'{}')),e);
       if (action === 'liveProgress') return out_(getFixtureProgress_(e.parameter.fixtureId), e);
@@ -52,9 +52,9 @@ function doGet(e) {
       if (action === 'players')  return out_({ ok:true, players: listPlayerNames_().map(function(p){return p.name;}), playerRecords:listPlayerNames_() }, e);
       if (action === 'addPlayer') return out_(resolveOrAddPlayer_(e.parameter.name || ''), e);
       if (action === 'markArrival') return out_(markPlayerArrived(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
-      if (action === 'setCourt') return out_(setFixtureCourt_(e.parameter.fixtureId, e.parameter.court), e);
-      if (action === 'overrideCourt') return out_(setFixtureCourtOverride_(e.parameter.fixtureId, e.parameter.court), e);
-      if (action === 'clearCourtOverride') return out_(clearFixtureCourtOverride_(e.parameter.fixtureId), e);
+      if (action === 'setCourt') { var cr = setFixtureCourt_(e.parameter.fixtureId, e.parameter.court); bumpFxGen_(); return out_(cr, e); }
+      if (action === 'overrideCourt') { var cr = setFixtureCourtOverride_(e.parameter.fixtureId, e.parameter.court); bumpFxGen_(); return out_(cr, e); }
+      if (action === 'clearCourtOverride') { var cr = clearFixtureCourtOverride_(e.parameter.fixtureId); bumpFxGen_(); return out_(cr, e); }
       if (action === 'clearArrival') return out_(clearArrival(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
       if (action === 'arrivalStatus') {
         var fixtureIds = e.parameter.fixtureIds ? JSON.parse(e.parameter.fixtureIds) : [];
