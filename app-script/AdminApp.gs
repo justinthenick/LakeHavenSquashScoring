@@ -45,6 +45,7 @@ function doGet(e) {
       if (action === 'fixtures') return out_({ ok:true, fixtures: readFixtures_(e.parameter.date) }, e);
       if (action === 'result')   { var wr = writeResult_(JSON.parse(e.parameter.data || '{}')); bumpFxGen_(); return out_(wr, e); }
       if (action === 'resultStatus') return out_(resultStatus_(e.parameter.matchId), e);
+      if (action === 'scratch') { var sr = scratchFixture_(e.parameter.fixtureId); bumpFxGen_(); return out_(sr, e); }
       if (action === 'progress') return out_(fixtureProgress_(JSON.parse(e.parameter.data||'{}')),e);
       if (action === 'liveProgress') return out_(getFixtureProgress_(e.parameter.fixtureId), e);
       if (action === 'venues') return out_(getVenues_(), e);
@@ -2258,7 +2259,14 @@ function getUnavailablePlayerIds_(date){
 }
 function getSubNominationsForFixtures_(fixtureIds){
   if(!fixtureIds||!fixtureIds.length)return {ok:true,data:[]};
-  return sbGet_('fixture_sub_nominations','select=fixture_id,original_player_id,sub_player_id&fixture_id=in.('+fixtureIds.join(',')+')');
+  var res=sbGet_('fixture_sub_nominations','select=fixture_id,original_player_id,sub_player_id&fixture_id=in.('+fixtureIds.join(',')+')');
+  // Attach the substitute's name so every screen can show who is actually playing
+  // without needing its own player list.
+  if(res.ok&&res.data.length){
+    try{var nm={};staticRows_('players','select=player_id,name').forEach(function(p){nm[p.player_id]=p.name;});
+      res.data.forEach(function(r){r.sub_name=nm[r.sub_player_id]||'';});}catch(e){}
+  }
+  return res;
 }
 function nominateSub(fixtureId,originalPlayerId,subPlayerId){
   fixtureId=String(fixtureId||'').trim();originalPlayerId=String(originalPlayerId||'').trim();subPlayerId=String(subPlayerId||'').trim();

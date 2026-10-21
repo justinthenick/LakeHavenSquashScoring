@@ -247,7 +247,7 @@ $('cwCourt').onchange=function(){cfg.court=$('cwCourt').value;saveCfg_();poll_(t
 $('cwDate').onchange=function(){cfg.date=$('cwDate').value;saveCfg_();poll_(true);};
 
 var pollTimer=null,liveTimer=null,tickTimer=null;
-var allFixtures=[],arrivalStatus={},subNominations={},unavailableIds={};
+var allFixtures=[],arrivalStatus={},subNominations={},unavailableIds={},subNames={};
 var liveState=null; // {games,points,players,colors,server,side,gameSec,matchSec,breakActive,gameNo,updated,fixtureId}
 var lastCurrent=null;
 
@@ -291,7 +291,7 @@ function poll_(force){
           arrivalStatus={};(r.data||[]).forEach(function(row){arrivalStatus[row.fixture_id+':'+row.player_id]=row.arrived_at;});
         }),
         callApi({action:'subNominations',fixtureIds:JSON.stringify(ids)}).then(function(r){
-          subNominations={};(r.data||[]).forEach(function(row){subNominations[row.fixture_id+':'+row.original_player_id]=row.sub_player_id;});
+          subNominations={};(r.data||[]).forEach(function(row){subNominations[row.fixture_id+':'+row.original_player_id]=row.sub_player_id;if(row.sub_name)subNames[row.sub_player_id]=row.sub_name;});
         }),
         callApi({action:'unavailableOnDate',date:date}).then(function(r){
           unavailableIds={};(r.playerIds||[]).forEach(function(id){unavailableIds[id]=true;});
@@ -345,7 +345,7 @@ function buildTiePill_(fx,playerId,playerName){
   if(subId){
     var arrived=!!arrivalStatus[fx.id+':'+subId];
     btn.className='arrive-pill'+(arrived?' arrived':'');
-    btn.textContent=(playerName||'?')+' → sub';
+    btn.textContent=(subNames[subId]||'Substitute')+' (sub)';
     btn.onclick=function(){toggleArrival_(fx,subId,arrived,btn);};
   } else if(isAbsent){
     btn.className='arrive-pill absent';btn.textContent=(playerName||'?')+' (away)';btn.disabled=true;
@@ -439,7 +439,8 @@ function renderBody_(current){
     }
     html+='</div>';
   } else if(current.status==='Played'){
-    html+='<div class="idle">Last result on this court:<br><b>'+esc(current.player1)+' v '+esc(current.player2)+'</b><br>'+esc(resultText_(current))+'</div>';
+    var lastNames=(current.actualPlayers&&current.actualPlayers[0])?current.actualPlayers:[current.player1,current.player2];
+    html+='<div class="idle">Last result on this court:<br><b>'+esc(lastNames[0])+' v '+esc(lastNames[1])+'</b><br>'+esc(resultText_(current))+'</div>';
   } else {
     html+='<div class="idle">Court '+esc(cfg.court)+' is between matches — next up is Line '+esc(current.line||'?')+'.</div>';
   }

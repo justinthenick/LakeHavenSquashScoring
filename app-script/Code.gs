@@ -497,3 +497,20 @@ function resultStatus_(matchId) {
   var rows = requireSb_(sbGet_('match_log', 'select=match_id&match_id=eq.' + encodeURIComponent(matchId))).data;
   return rows.length ? { ok:true, found:true, result:{ ok:true, duplicate:true } } : { ok:true, found:false };
 }
+
+// Double scratch (neither player present), written exactly like Comp Admin's
+// "both DNP" commit: 0-0, "(scratched)", no games, source 'scan' - the database only
+// accepts a scratch in that shape. Each team then gets 1.5 team points in standings.
+// Idempotent: re-sending the same scratch is a no-op, and it never overwrites a
+// different existing result (the database refuses).
+function scratchFixture_(fixtureId){
+  fixtureId=String(fixtureId||'').trim();
+  if(!fixtureId||fixtureId.length>120)return {ok:false,error:'Select a fixture first.',retryable:false};
+  var fx=fixtureInfo_(fixtureId);
+  if(!fx)return {ok:false,error:'Fixture could not be loaded. Try again.',retryable:true};
+  if(!fx.player1Id||!fx.player2Id)return {ok:false,error:'This fixture has no scheduled players to scratch.',retryable:false};
+  var match={match_id:'scan-'+fixtureId,fixture_id:fixtureId,comp_ref:fx.compRef,match_date:fx.scheduled,committed_ts:new Date(),
+    player1_id:fx.player1Id,player2_id:fx.player2Id,sub1:false,sub2:false,games_p1:0,games_p2:0,winner_id:null,
+    score_line:'0-0 (scratched)',duration_sec:0,scan_link:'',source:'scan',raw_rally_history:''};
+  return sbRpc_('cc_save_result',{p_match:match,p_games:[],p_rallies:[],p_replace:false});
+}

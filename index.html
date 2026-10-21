@@ -403,6 +403,7 @@
     </div>
 
     <button class="cta" id="start">Start scoring</button>
+    <button class="cta ghost" id="scratchBtn" style="display:none">Neither player here — mark match as scratched</button>
     <div class="hint" style="margin-top:14px">Server retains serve and swaps box each point won. Lose the rally and the serve passes over — new server starts on the right (tap the box badge to move left).</div>
   </div>
 </section>
@@ -984,7 +985,7 @@ function applyFixtureFilter(skipDetails){
     if(team&&f.team1!==team&&f.team2!==team)return false;
     if(line&&String(f.line||'')!==String(line))return false;
     if(courtCur){if(courtCur==='none'){if(f.court)return false;}else if(String(f.court||'')!==courtCur)return false;}
-    if(q&&(((f.player1||'')+' '+(f.player2||'')).toLowerCase().indexOf(q)<0))return false;
+    if(q&&(((f.player1||'')+' '+(f.player2||'')+' '+playerNameById_(subNominations[f.id+':'+f.player1Id])+' '+playerNameById_(subNominations[f.id+':'+f.player2Id])).toLowerCase().indexOf(q)<0))return false;
     if(ready){var r=fixtureReadiness_(f).ready;if(ready==='ready'&&!r)return false;if(ready==='notready'&&r)return false;}
     return true;
   });
@@ -1034,6 +1035,7 @@ function applyFixtureFilter(skipDetails){
         var next = {};
         (result.data||[]).forEach(function(row) {
           next[row.fixture_id + ':' + row.original_player_id] = row.sub_player_id;
+          if(row.sub_name)subNames_[row.sub_player_id]=row.sub_name;
         });
         if(JSON.stringify(next)===JSON.stringify(subNominations)) return;
         subNominations = next;
@@ -1129,8 +1131,10 @@ function drawFixtures(list,note,seqMap,swapNote){
 }
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 
+function updateScratchBtn_(){var b=$('scratchBtn');if(b)b.style.display=(activeFixture&&activeFixture.id)?'':'none';}
 function applyFixture(fx){
   activeFixture=fx;
+  updateScratchBtn_();
   $('formatHint').textContent='Format: '+(fx.pointsToWin||15)+' points, best of '+(fx.bestOf||5)+', '+(fx.winByTwo?'win by two.':'sudden death (no win-by-two).');
   var p1SubId=subNominations[fx.id+':'+fx.player1Id], p2SubId=subNominations[fx.id+':'+fx.player2Id];
   var p1Name=p1SubId?(playerNameById_(p1SubId)||fx.player1):fx.player1;
@@ -1297,11 +1301,13 @@ function refreshQueueData_(){
   var date=activeFixture.scheduled;
   Promise.all([
     callApi({action:'arrivalStatus', fixtureIds:JSON.stringify(ids), date:date}).then(function(result){
+      Object.keys(arrivalStatus).forEach(function(k){if(ids.indexOf(k.split(':')[0])>=0)delete arrivalStatus[k];});
       (result.data||[]).forEach(function(row){arrivalStatus[row.fixture_id+':'+row.player_id]=row.arrived_at;});
       applyLocalArrivals_(arrivalStatus);
     }),
     callApi({action:'subNominations', fixtureIds:JSON.stringify(ids)}).then(function(result){
-      (result.data||[]).forEach(function(row){subNominations[row.fixture_id+':'+row.original_player_id]=row.sub_player_id;});
+      Object.keys(subNominations).forEach(function(k){if(ids.indexOf(k.split(':')[0])>=0)delete subNominations[k];});
+      (result.data||[]).forEach(function(row){subNominations[row.fixture_id+':'+row.original_player_id]=row.sub_player_id;if(row.sub_name)subNames_[row.sub_player_id]=row.sub_name;});
     })
   ]).then(function(){renderQueueBar_();if($('gap').classList.contains('active')&&lastTieData)renderTie(lastTieData);}).catch(function(){});
 }
@@ -1412,9 +1418,10 @@ function toggleArrival_(fx, playerId, currentlyArrived, btn){
 // states: a sub is already nominated (show sub, tap toggles the SUB's
 // arrival); the rostered player is planned-absent with no sub yet (tap
 // opens the sub picker instead of toggling arrival); or the normal case.
+var subNames_={}; // substitute player id -> name, as returned with the nominations
 function playerNameById_(id){
   var p=playerRecords.filter(function(x){return x.id===id;})[0];
-  return p?p.name:'';
+  return p?p.name:(subNames_[id]||'');
 }
 // Pre-allocation edit for the fixture LIST view - moves the WHOLE tie
 // (every line), swapping with whichever tie is already on that court
@@ -1557,6 +1564,31 @@ $('subPickerClear').onclick=function(){
   }).catch(function(err){
     alert('Could not clear substitute: '+(err.msg||err.reason||'unknown error'));
   });
+};
+
+/* ---- scratch: neither player present (not the same as abandoning a match part-way) ---- */
+$('scratchBtn').onclick=function(){
+  var fx=activeFixture;if(!fx||!fx.id)return;
+  var a=$('n1').value.trim()||fx.player1||'Player 1',b=$('n2').value.trim()||fx.player2||'Player 2';
+  if(!confirm('Mark Line '+(fx.line||'?')+' ('+a+' vs '+b+') as SCRATCHED?\n\nNeither player is here. No match is played and each team is awarded 1.5 points. This can only be changed in Comp Admin.'))return;
+  var btn=$('scratchBtn');btn.disabled=true;btn.textContent='Scratching…';
+  function send(retry){
+    return callApi({action:'scratch',fixtureId:fx.id}).catch(function(err){
+      if(retry&&err&&(err.reason==='timeout'||err.reason==='network'))return send(false);
+      throw err;
+    });
+  }
+  send(true).then(function(){
+    delete tieCache_[tieKey_(fx.id)];
+    activeFixture=null;updateScratchBtn_();
+    plannedNames=['',''];$('n1').value='';$('n2').value='';
+    if($('sub1'))$('sub1').checked=false;if($('sub2'))$('sub2').checked=false;
+    lockField(0,false);lockField(1,false);hideSuggest(0);hideSuggest(1);
+    banner('setupBanner','ok','Line '+(fx.line||'?')+' marked as scratched. Each team is awarded 1.5 points.');
+    loadFixturesForDate(currentFxDate_(),true);
+  }).catch(function(err){
+    alert('Could not mark as scratched: '+(err.msg||err.reason||'unknown error')+'. Nothing was changed.');
+  }).then(function(){btn.disabled=false;btn.textContent='Neither player here — mark match as scratched';});
 };
 
 /* ---- start match ---- */
@@ -1842,6 +1874,10 @@ function renderTie(d){
 
     var namesSpan=document.createElement('span');namesSpan.className='tn';
     var nm=pairShort(l.p1||'', l.p2||'');
+    // Show who is actually playing: the live match uses the names being scored, played
+    // rows use who really played, and upcoming rows swap in any nominated sub.
+    if(me&&M&&M.config&&M.config.players)nm=pairShort(M.config.players[0].name,M.config.players[1].name);
+    else if(l.played&&fx&&fx.actualPlayers&&fx.actualPlayers[0])nm=pairShort(fx.actualPlayers[0],fx.actualPlayers[1]||'');
     if(fx&&!me&&!l.played){
       var p1=buildPlayerPill_(fx,fx.player1Id,nm[0]);
       var p2=buildPlayerPill_(fx,fx.player2Id,nm[1]);
@@ -2006,7 +2042,7 @@ $('save').onclick=function(){
  }).then(function(){$('again').disabled=false;refreshQueueStatus();});
 };
 $('undoMatch').onclick=function(){cancelAutoSaveTimer();if(!M||M.locked)return;undo(M);lastGames=M.games.length;show('score');startTimers();renderScore();if(M.timing.breakActive)openGap();};
-$('again').onclick=function(){var hadResult=!!(M&&M.locked&&!M.adhoc);M=null;activeFixture=null;lastGames=0;clearActive();
+$('again').onclick=function(){var hadResult=!!(M&&M.locked&&!M.adhoc);M=null;activeFixture=null;updateScratchBtn_();lastGames=0;clearActive();
   plannedNames=['',''];if($('sub1'))$('sub1').checked=false;if($('sub2'))$('sub2').checked=false;
   lockField(0,false);lockField(1,false);hideSuggest(0);hideSuggest(1);
   banner('setupBanner','',null);show('setup');loadFixturesForDate(currentFxDate_(),hadResult);};
