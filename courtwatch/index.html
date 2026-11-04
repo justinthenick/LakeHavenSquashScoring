@@ -341,7 +341,7 @@ function tickClock_(){
 function buildTiePill_(fx,playerId,playerName){
   var btn=document.createElement('button');btn.type='button';
   var subId=playerId?subNominations[fx.id+':'+playerId]:'';
-  var isAbsent=!subId&&playerId&&unavailableIds[playerId];
+  var isAbsent=!subId&&playerId&&unavailableIds[playerId]&&!arrivalStatus[fx.id+':'+playerId];
   if(subId){
     var arrived=!!arrivalStatus[fx.id+':'+subId];
     btn.className='arrive-pill'+(arrived?' arrived':'');

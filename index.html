@@ -163,6 +163,10 @@
   .serve.show{display:flex}
   .serve.left{margin-right:auto} .serve.right{margin-left:auto}
   .serve small{font-size:9px;position:absolute;bottom:5px;letter-spacing:.1em}
+  .serve small::before{content:attr(data-s)}
+  /* How this service came about, for the whole rally: hand-out (serve changed hands) vs point (server held). */
+  .serve.ho{background:#5340a8;border-color:#fff;box-shadow:0 0 0 3px #5340a8,0 3px 10px rgba(0,0,0,.3)}
+  .serve.pt{background:#1c6b3d;border-color:#fff;box-shadow:0 0 0 3px #1c6b3d,0 3px 10px rgba(0,0,0,.3)}
   .serve::after{content:'⇄';position:absolute;top:2px;right:5px;font-size:11px;opacity:.9;font-weight:800}
   .msgbar{height:34px;display:flex;align-items:center;justify-content:center;padding:0 12px;flex:none}
   .msg{opacity:0;transform:translateY(-5px);transition:opacity .18s ease,transform .18s ease;
@@ -256,6 +260,7 @@
     .serveslot{height:78px}
     .serve{width:78px;height:78px;font-size:34px;border-radius:18px}
     .serve small{font-size:12px;bottom:7px}
+    .serve small::before{content:attr(data-l)}
     .serve::after{font-size:15px;top:4px;right:8px}
     .panel .pts{font-size:min(38vh,34vw,420px)}
     .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:19%}
@@ -333,6 +338,8 @@
     font-size:21px;font-weight:800;color:var(--ink);line-height:1.4}
   .rotatehint .ic{font-size:56px;display:block;margin-bottom:16px}
   @media (orientation:landscape){ body.scoring .rotatehint{display:flex} }
+  /* A tablet, or an on-screen keyboard squashing the viewport, is not a device turned sideways. */
+  body.tablet .rotatehint, body.typing .rotatehint{display:none!important}
   .sheet h2{font-size:22px;margin-bottom:6px}
   .sheet p{color:var(--muted);margin:0 0 18px;font-weight:600}
   .breakclock{font-size:30px;font-weight:900;color:var(--ink);margin:8px 0 20px;letter-spacing:.02em}
@@ -429,14 +436,14 @@
   <div class="arena">
     <button class="panel" id="panel0">
       <span class="pname" id="name0">Player 1</span>
-      <span class="serveslot"><span class="serve" id="serve0">R<small>SERVE</small></span></span>
+      <span class="serveslot"><span class="serve" id="serve0">R<small data-s="SERVE" data-l="SERVE"></small></span></span>
       <span class="gameball" id="gb0"></span>
       <span class="pts tnum" id="pts0">0</span>
       <span class="tapcue">tap = won rally</span>
     </button>
     <button class="panel" id="panel1">
       <span class="pname" id="name1">Player 2</span>
-      <span class="serveslot"><span class="serve" id="serve1">R<small>SERVE</small></span></span>
+      <span class="serveslot"><span class="serve" id="serve1">R<small data-s="SERVE" data-l="SERVE"></small></span></span>
       <span class="gameball" id="gb1"></span>
       <span class="pts tnum" id="pts1">0</span>
       <span class="tapcue">tap = won rally</span>
@@ -513,6 +520,7 @@
   <p class="hint" id="subPickerSubtitle"></p>
   <input id="subPickerInput" placeholder="Search player name…" autocomplete="off" style="margin:10px 0;width:100%">
   <div id="subPickerSuggest" class="suggest"></div>
+  <button class="cta ghost" id="subPickerPresent" style="display:none;width:100%;margin-top:10px">Actually here — mark as present</button>
   <button class="cta ghost" id="subPickerClear" style="display:none;width:100%;margin-top:10px">Clear substitution</button>
   <button class="cta ghost" id="subPickerCancel" style="width:100%;margin-top:10px">Cancel</button>
 </div></div>
@@ -740,6 +748,9 @@ var plannedNames=['',''];   // original fixture names, for sub tracking
 var M=null, activeFixture=null, tick=null;
 
 function $(id){return document.getElementById(id);}
+if(Math.min(screen.width||0,screen.height||0)>=600)document.body.classList.add('tablet');
+document.addEventListener('focusin',function(e){if(e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))document.body.classList.add('typing');});
+document.addEventListener('focusout',function(){setTimeout(function(){var a=document.activeElement;if(!(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))document.body.classList.remove('typing');},50);});
 function show(scr){
   ['setup','score','summary'].forEach(function(s){$(s).classList.toggle('active',s===scr);});
   // Lock page scroll on the score screen so it can't be dragged/overscrolled; keep normal
@@ -1052,11 +1063,18 @@ function fmtDur_(sec){
   if(sec<3600)return Math.max(1,Math.round(sec/60))+' min';
   return Math.floor(sec/3600)+'h '+('0'+Math.round((sec%3600)/60)).slice(-2)+'m';
 }
+function fixturePointsTotals_(fx){
+  var g=fx.gameDetail||[];if(!g.length)return null;
+  var a=0,b=0;g.forEach(function(x){a+=Number(x.p1)||0;b+=Number(x.p2)||0;});
+  return [a,b];
+}
 function fixtureTimingLine_(fx){
   var bits=[];
   if(fx.startTime)bits.push('Start '+fx.startTime);
   if(fx.endTime)bits.push('End '+fx.endTime);
   var d=fmtDur_(fx.durationSec);if(d)bits.push(d);
+  var pt=fixturePointsTotals_(fx);
+  if(pt){var nm=(fx.actualPlayers&&fx.actualPlayers[0])?fx.actualPlayers:[fx.player1,fx.player2];var sn=pairShort(nm[0]||'',nm[1]||'');bits.push('Points '+sn[0]+' '+pt[0]+' – '+pt[1]+' '+sn[1]);}
   return bits.join(' · ');
 }
 function fixtureGameDetailEl_(fx){
@@ -1065,6 +1083,8 @@ function fixtureGameDetailEl_(fx){
     var span=(g.start&&g.end)?(g.start+' – '+g.end):'';
     return '<div class="fxg"><b>Game '+g.n+'</b><span class="tnum">'+g.p1+'–'+g.p2+'</span><span class="tnum">'+(g.dur?fmtT(g.dur):'')+'</span><span class="fxgt">'+esc(span)+'</span></div>';
   }).join('');
+  var pt=fixturePointsTotals_(fx);
+  if(pt)rows+='<div class="fxg"><b>Total</b><span class="tnum">'+pt[0]+'–'+pt[1]+'</span><span class="tnum">'+(fx.durationSec?fmtT(fx.durationSec):'')+'</span><span class="fxgt">points</span></div>';
   box.innerHTML=rows+'<div class="hint" style="margin:6px 0 0">Changes to recorded results are managed in Comp Admin.</div>';
   return box;
 }
@@ -1479,7 +1499,7 @@ function buildCourtPill_(fx){
 }
 function buildPlayerPill_(fx, playerId, playerName){
   var subId = playerId ? subNominations[fx.id+':'+playerId] : '';
-  var isAbsent = !subId && playerId && unavailablePlayerIds[playerId];
+  var isAbsent = !subId && playerId && unavailablePlayerIds[playerId] && !arrivalStatus[fx.id+':'+playerId];   // marking them arrived overrides 'away'
   var btn=document.createElement('button');btn.type='button';
   if(subId){
     var subName=playerNameById_(subId)||'Substitute';
@@ -1510,11 +1530,20 @@ function openSubPicker_(fx, playerId, playerName, hasSub){
   $('subPickerInput').value='';
   $('subPickerSuggest').innerHTML='';
   $('subPickerClear').style.display=hasSub?'block':'none';
+  $('subPickerPresent').style.display=hasSub?'none':'block';
+  $('subPickerPresent').textContent=playerName+' is actually here — mark as present';
   $('subPickerSheet').classList.add('active');
   $('subPickerInput').focus();
 }
 function closeSubPicker_(){$('subPickerSheet').classList.remove('active');subPickerCtx=null;}
 $('subPickerCancel').onclick=closeSubPicker_;
+// Overrides the planned 'away' status: recording the arrival makes the player show as present
+// (and tappable to un-arrive) without touching the unavailability record in Comp Admin.
+$('subPickerPresent').onclick=function(){
+  var c=subPickerCtx;if(!c)return;
+  closeSubPicker_();
+  toggleArrival_(c.fx,c.playerId,false,null);
+};
 $('subPickerInput').oninput=function(){renderSubPickerSuggest_(this.value);};
 function renderSubPickerSuggest_(q){
   var host=$('subPickerSuggest');
@@ -1680,6 +1709,13 @@ function updateCourtTag_(){
     });
   };
 }
+// 'ho' if the current service came from a hand-out (server changed on the last rally of this game),
+// 'pt' if the server held, '' at the start of a game.
+function serveOrigin_(){
+  var log=M.log||[],e=log[log.length-1];
+  if(!e||e.game!==M.games.length+1)return '';
+  return e.winner===e.server?'pt':'ho';
+}
 function renderScore(){
   updateCourtTag_();
   // a game just completed -> stamp its end/duration, open the break
@@ -1696,8 +1732,11 @@ function renderScore(){
   for(var i=0;i<2;i++){
     var sv=$('serve'+i);
     if(M.server===i&&!M.over){
-      sv.className='serve show '+(M.side==='R'?'right':'left');
+      var org=serveOrigin_();
+      sv.className='serve show '+(M.side==='R'?'right':'left')+(org?' '+org:'');
       sv.firstChild.nodeValue=M.side;
+      var sm=sv.querySelector('small');
+      if(sm){sm.dataset.s=org==='ho'?'HO':org==='pt'?'P':'SERVE';sm.dataset.l=org==='ho'?'HAND-OUT':org==='pt'?'POINT':'SERVE';}
     } else {
       sv.className='serve';
     }
