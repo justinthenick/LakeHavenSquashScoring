@@ -433,7 +433,7 @@ function fixtureProgress_(b){
  var id=String(b.fixtureId||''),session=String(b.matchId||'');if(!id||!session||id.length>120||session.length>160)throw new Error('Invalid fixture progress.');
  var fx=cacheJson_('fxp:'+fxGen_()+':'+id,30,function(){return requireSb_(sbGet_('fixtures','select=played&fixture_id=eq.'+encodeURIComponent(id))).data;});
  if(!fx.length||fx[0].played)return {ok:true,finished:true};
- function pair(v){if(!Array.isArray(v)||v.length!==2||v.some(function(n){return !Number.isInteger(n)||n<0||n>99;}))throw new Error('Invalid progress score.');return v;}
+ function pair(v){if(!Array.isArray(v)||v.length!==2||v.some(function(n){return !Number.isInteger(n)||n<-50||n>99;}))throw new Error('Invalid progress score.');return v;}
  function secs(v){v=Number(v);return (Number.isFinite(v)&&v>=0&&v<=36000)?Math.round(v):0;}
  function hexColor(v){return /^#[0-9a-fA-F]{3,6}$/.test(String(v||''))?String(v):'';}
  // Extra fields (colors/server/side/clocks) are for Court Watch's live

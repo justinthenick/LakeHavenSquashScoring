@@ -398,6 +398,14 @@
 
     <div class="hint" id="formatHint" style="margin-top:18px">Select a fixture to load its scoring format, or enter two players below to score a casual game (15 points, best of 5, not recorded in any competition).</div>
 
+    <label class="subrow" style="margin-top:14px"><input type="checkbox" id="hcOn"> Handicap — players start every game on a set score</label>
+    <div id="hcBox" style="display:none;margin-top:8px">
+      <div class="row">
+        <div><label class="field" id="hcL1">Player 1 starts each game on</label><select id="hc1"><option value="-15">−15</option><option value="-14">−14</option><option value="-13">−13</option><option value="-12">−12</option><option value="-11">−11</option><option value="-10">−10</option><option value="-9">−9</option><option value="-8">−8</option><option value="-7">−7</option><option value="-6">−6</option><option value="-5">−5</option><option value="-4">−4</option><option value="-3">−3</option><option value="-2">−2</option><option value="-1">−1</option><option value="0" selected>0 (none)</option><option value="1">+1</option><option value="2">+2</option><option value="3">+3</option><option value="4">+4</option><option value="5">+5</option><option value="6">+6</option><option value="7">+7</option><option value="8">+8</option><option value="9">+9</option><option value="10">+10</option><option value="11">+11</option><option value="12">+12</option><option value="13">+13</option><option value="14">+14</option><option value="15">+15</option></select></div>
+        <div><label class="field" id="hcL2">Player 2 starts each game on</label><select id="hc2"><option value="-15">−15</option><option value="-14">−14</option><option value="-13">−13</option><option value="-12">−12</option><option value="-11">−11</option><option value="-10">−10</option><option value="-9">−9</option><option value="-8">−8</option><option value="-7">−7</option><option value="-6">−6</option><option value="-5">−5</option><option value="-4">−4</option><option value="-3">−3</option><option value="-2">−2</option><option value="-1">−1</option><option value="0" selected>0 (none)</option><option value="1">+1</option><option value="2">+2</option><option value="3">+3</option><option value="4">+4</option><option value="5">+5</option><option value="6">+6</option><option value="7">+7</option><option value="8">+8</option><option value="9">+9</option><option value="10">+10</option><option value="11">+11</option><option value="12">+12</option><option value="13">+13</option><option value="14">+14</option><option value="15">+15</option></select></div>
+      </div>
+      <div class="hint">For example −5 means that player starts every game on −5. The winning score does not change. Handicap results are saved with the game scores only (no rally-by-rally history).</div>
+    </div>
     <div class="row" style="margin-top:6px">
       <div><label class="field">Scorer</label><input id="scorer" placeholder="Scorer name" autocomplete="off"><div id="sugScorer" class="suggest"></div></div>
       <div><label class="field">Referee</label><input id="ref" placeholder="Ref name" autocomplete="off"><div id="sugRef" class="suggest"></div></div>
@@ -570,12 +578,13 @@ function openSettings(){
 function gamesNeeded(bestOf){return Math.floor(bestOf/2)+1;}
 function isGameBall(m,i){ if(m.over)return false; var pts=[m.points[0],m.points[1]]; pts[i]++; return gameResult(pts,m.config)===i; }
 function isMatchBall(m,i){ if(!isGameBall(m,i))return false; return gamesWonBy(m,i)+1>=gamesNeeded(m.config.bestOf); }
-function createMatch(config){return{config:config,points:[0,0],server:config.firstServer,side:'R',log:[],games:[],over:false,matchWinner:null,history:[]};}
+function startPoints_(cfg){var h=(cfg&&cfg.handicap)||[0,0];return [Number(h[0])||0,Number(h[1])||0];}
+function createMatch(config){return{config:config,points:startPoints_(config),server:config.firstServer,side:'R',log:[],games:[],over:false,matchWinner:null,history:[]};}
 function snapshot(m){return {points:m.points.slice(),server:m.server,side:m.side,log:m.log.slice(),games:m.games.map(function(g){return {points:g.points.slice(),winner:g.winner};}),over:m.over,matchWinner:m.matchWinner,abandoned:!!m.abandoned,timing:m.timing?JSON.parse(JSON.stringify(m.timing)):null};}
 function restore(m,s){m.points=s.points;m.server=s.server;m.side=s.side;m.log=s.log;m.games=s.games;m.over=s.over;m.matchWinner=s.matchWinner;m.abandoned=!!s.abandoned;if(s.timing)m.timing=s.timing;}
 function gameResult(points,cfg){var a=points[0],b=points[1];var hi=Math.max(a,b),lo=Math.min(a,b);if(hi<cfg.pointsToWin)return null;if(cfg.winByTwo&&(hi-lo)<2)return null;return a>b?0:1;}
 function gamesWonBy(m,idx,inc){var n=0;for(var i=0;i<m.games.length;i++)if(m.games[i].winner===idx)n++;if(inc!==undefined&&inc===idx)n++;return n;}
-function wonRally(m,winner){if(m.over)return m;m.history.push(snapshot(m));m.points[winner]+=1;m.log.push({game:m.games.length+1,winner:winner,score:[m.points[0],m.points[1]],server:m.server,side:m.side});if(winner===m.server){m.side=(m.side==='R')?'L':'R';}else{m.server=winner;m.side='R';}var g=gameResult(m.points,m.config);if(g!==null){var need=gamesNeeded(m.config.bestOf);var wins=gamesWonBy(m,g,g);m.games.push({points:[m.points[0],m.points[1]],winner:g});if(wins>=need){m.over=true;m.matchWinner=g;}else{m.points=[0,0];m.server=g;m.side='R';}}return m;}
+function wonRally(m,winner){if(m.over)return m;m.history.push(snapshot(m));m.points[winner]+=1;m.log.push({game:m.games.length+1,winner:winner,score:[m.points[0],m.points[1]],server:m.server,side:m.side});if(winner===m.server){m.side=(m.side==='R')?'L':'R';}else{m.server=winner;m.side='R';}var g=gameResult(m.points,m.config);if(g!==null){var need=gamesNeeded(m.config.bestOf);var wins=gamesWonBy(m,g,g);m.games.push({points:[m.points[0],m.points[1]],winner:g});if(wins>=need){m.over=true;m.matchWinner=g;}else{m.points=startPoints_(m.config);m.server=g;m.side='R';}}return m;}
 function toggleSide(m){if(m.over)return m;m.history.push(snapshot(m));m.side=(m.side==='R')?'L':'R';return m;}
 function changeServer(m){if(m.over)return m;m.history.push(snapshot(m));m.server=1-m.server;m.side='R';return m;}   // "mugs away" etc — swap who serves, no point
 function undo(m){if(m.locked||m.history.length===0)return m;restore(m,m.history.pop());return m;}
@@ -595,7 +604,7 @@ function abandonMatch(m,winnerIdx){
   var finalPts=[0,0]; finalPts[winnerIdx]=Math.max(m.config.pointsToWin,m.points[loserIdx]+(m.config.winByTwo?2:1)); finalPts[loserIdx]=m.points[loserIdx];
   m.games.push({points:finalPts, winner:winnerIdx});
   while(gamesWonBy(m,winnerIdx)<need){ var sweep=[0,0]; sweep[winnerIdx]=m.config.pointsToWin; m.games.push({points:sweep, winner:winnerIdx}); }
-  m.points=[0,0]; m.over=true; m.matchWinner=winnerIdx; m.abandoned=true;
+  m.points=startPoints_(m.config); m.over=true; m.matchWinner=winnerIdx; m.abandoned=true;
   return m;
 }
 function matchGamesScore(m){return[gamesWonBy(m,0),gamesWonBy(m,1)];}
@@ -789,7 +798,9 @@ wireToggle($('firstServe'));
 
 function pressedVal(host){var b=host.querySelector('[aria-pressed="true"]');return b?b.dataset.v:null;}
 function names(){return[$('n1').value.trim()||'Player 1',$('n2').value.trim()||'Player 2'];}
-function refreshFirstServeLabels(){var n=names();$('fs1').textContent=n[0];$('fs2').textContent=n[1];}
+function refreshFirstServeLabels(){var n=names();$('fs1').textContent=n[0];$('fs2').textContent=n[1];if($('hcL1')){$('hcL1').textContent=n[0]+' starts each game on';$('hcL2').textContent=n[1]+' starts each game on';}}
+$('hcOn').onchange=function(){$('hcBox').style.display=this.checked?'':'none';refreshFirstServeLabels();};
+$('n1').addEventListener('input',refreshFirstServeLabels);$('n2').addEventListener('input',refreshFirstServeLabels);
 
 /* player roster + fixture-name locking --------------------------------
    A name populated FROM a fixture is locked (read-only) unless its
@@ -1628,8 +1639,10 @@ $('start').onclick=function(){
     pointsToWin:activeFixture?activeFixture.pointsToWin||15:15,
     winByTwo:activeFixture?!!activeFixture.winByTwo:false,
     bestOf:activeFixture?activeFixture.bestOf||5:5,
-    firstServer:parseInt(pressedVal($('firstServe')),10)
+    firstServer:parseInt(pressedVal($('firstServe')),10),
+    handicap:$('hcOn').checked?[parseInt($('hc1').value,10)||0,parseInt($('hc2').value,10)||0]:[0,0]
   };
+  if(cfg.handicap.some(function(h){return h>=cfg.pointsToWin-1;})){alert('A handicap start of '+(cfg.pointsToWin-1)+' or more is too close to the winning score ('+cfg.pointsToWin+'). Choose a smaller start.');return;}
   if(!n[0]||!n[1]||n[0]===n[1]){alert('Select two different players.');return;}
   if(!activeFixture&&!confirm('No fixture selected. This will be a casual game: it is scored here but NOT recorded in any competition. Start anyway?'))return;
   lastGames=0;
@@ -1974,10 +1987,15 @@ function payloadPlayerId(i,name){
 }
 function buildPayload(){
   var gs=matchGamesScore(M);var n=M.config.players;var T=M.timing;
-  var lineParts=M.games.map(function(g){return g.points[0]+'-'+g.points[1];});
+  // Handicap matches: a game can finish below zero on the scoreboard, which the database refuses,
+  // so scores are saved floored at 0; rally-by-rally history is left out (it starts from 0-0).
+  var hcp=startPoints_(M.config),hasHc=!!(hcp[0]||hcp[1]);
+  function sv_(v){return hasHc?Math.max(0,v):v;}
+  var hcNote=hasHc?' [handicap: '+n[0].name+' '+hcp[0]+', '+n[1].name+' '+hcp[1]+']':'';
+  var lineParts=M.games.map(function(g){return sv_(g.points[0])+'-'+sv_(g.points[1]);});
   // compact rally history: winner (1/2) per rally, grouped by game, games joined by "|"
   var _hg={};(M.log||[]).forEach(function(e){var g=e.game||1;_hg[g]=(_hg[g]||'')+(e.winner+1);});
-  var history=Object.keys(_hg).sort(function(a,b){return a-b;}).map(function(g){return _hg[g];}).join('|');
+  var history=hasHc?'':Object.keys(_hg).sort(function(a,b){return a-b;}).map(function(g){return _hg[g];}).join('|');
   return{
     action:'result',
     matchId:M.matchId,
@@ -1993,10 +2011,10 @@ function buildPayload(){
     planned1:M.planned?M.planned[0]:'',planned2:M.planned?M.planned[1]:'',
     sub1:M.subs?!!M.subs[0]:false,sub2:M.subs?!!M.subs[1]:false,
     games:M.games.map(function(g,i){var t=T.games[i]||{};
-      return{p1:g.points[0],p2:g.points[1],winner:g.winner+1,
+      return{p1:sv_(g.points[0]),p2:sv_(g.points[1]),winner:g.winner+1,
         timeStart:t.startTs||'',timeEnd:t.endTs||'',
         duration:t.durationSec||0,breakTime:t.breakBeforeSec||0};}),
-    scoreLine:gs[0]+'-'+gs[1]+' ('+lineParts.join(', ')+')'+(M.abandoned?' (abandoned)':''),
+    scoreLine:gs[0]+'-'+gs[1]+' ('+lineParts.join(', ')+')'+(M.abandoned?' (abandoned)':'')+hcNote,
     gamesP1:gs[0],gamesP2:gs[1],
     pointsP1:M.games.reduce(function(a,g){return a+g.points[0];},0),
     pointsP2:M.games.reduce(function(a,g){return a+g.points[1];},0),
@@ -2005,7 +2023,7 @@ function buildPayload(){
     durationSec:T.matchSec,
     history:history,
     abandoned:!!M.abandoned,
-    serviceHistory:(function(){var gs={};(M.log||[]).forEach(function(r){gs[r.game]=(gs[r.game]||'')+'ABCD'[r.server*2+(r.side==='L'?1:0)];});return Object.keys(gs).sort(function(a,b){return a-b;}).map(function(g){return gs[g];}).join('|');})(),
+    serviceHistory:hasHc?'':(function(){var gs={};(M.log||[]).forEach(function(r){gs[r.game]=(gs[r.game]||'')+'ABCD'[r.server*2+(r.side==='L'?1:0)];});return Object.keys(gs).sort(function(a,b){return a-b;}).map(function(g){return gs[g];}).join('|');})(),
     firstServer:(M.config.firstServer||0)+1
   };
 }
@@ -2039,7 +2057,8 @@ function goSummary(){
   var p=buildPayload();pendingPayload=p;var n=M.config.players;
   $('th0').textContent=n[0].name;$('th1').textContent=n[1].name;
   $('hg0').textContent=p.gamesP1;$('hg1').textContent=p.gamesP2;
-  $('wonLine').textContent=(p.winner?(p.winner+' wins '+p.gamesP1+'–'+p.gamesP2):'Match ended')+(M.abandoned?' (match abandoned)':'');
+  var hcs_=startPoints_(M.config);
+  $('wonLine').textContent=(p.winner?(p.winner+' wins '+p.gamesP1+'–'+p.gamesP2):'Match ended')+(M.abandoned?' (match abandoned)':'')+((hcs_[0]||hcs_[1])?' · Handicap: '+n[0].name+' '+(hcs_[0]>0?'+':'')+hcs_[0]+', '+n[1].name+' '+(hcs_[1]>0?'+':'')+hcs_[1]:'');
   var body=$('gameRows');body.innerHTML='';
   p.games.forEach(function(g,i){var tr=document.createElement('tr');
     tr.innerHTML='<td>#'+(i+1)+'</td><td class="tnum">'+g.p1+'</td><td class="tnum">'+g.p2+'</td><td class="tnum">'+fmtT(g.duration||0)+'</td>';
@@ -2097,8 +2116,9 @@ function applyMatchChrome(cfg){
   $('panel0').style.background='var(--p1)';$('panel1').style.background='var(--p2)';
   $('panel0').style.color=isLight(cfg.players[0].color)?'#14202b':'#fff';
   $('panel1').style.color=isLight(cfg.players[1].color)?'#14202b':'#fff';
-  $('name0').textContent=cfg.players[0].name+((M&&M.subs&&M.subs[0])?' (sub)':'');
-  $('name1').textContent=cfg.players[1].name+((M&&M.subs&&M.subs[1])?' (sub)':'');
+  var hcs=startPoints_(cfg);function hcTag(i){return hcs[i]?' ('+(hcs[i]>0?'+':'\u2212')+Math.abs(hcs[i])+')':'';}
+  $('name0').textContent=cfg.players[0].name+((M&&M.subs&&M.subs[0])?' (sub)':'')+hcTag(0);
+  $('name1').textContent=cfg.players[1].name+((M&&M.subs&&M.subs[1])?' (sub)':'')+hcTag(1);
   $('hname0').textContent=cfg.players[0].name;
   $('hname1').textContent=cfg.players[1].name;
   $('hname0').style.color='var(--p1t)';
