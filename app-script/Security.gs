@@ -102,6 +102,7 @@ function removeTieCourtAllocation(){assertAdmin_();try{return removeTieCourtAllo
 function autoDistributeCourts(){assertAdmin_();try{return autoDistributeCourts_.apply(null,arguments);}finally{bumpFxGen_();}}
 
 function getOutputConfig(){assertAdmin_();return getOutputConfig_.apply(null,arguments);}
+function setCompScanRequired(){assertAdmin_();return setCompScanRequired_.apply(null,arguments);}
 
 function saveOutputConfig(){assertAdmin_();return saveOutputConfig_.apply(null,arguments);}
 

@@ -610,6 +610,7 @@ function setScanLinkFor_(sh, fid, scanUrl){
 }
 function commitResults_(payload) {
   var comp = payload.comp, round = payload.round, rules = getRules_(comp), gtw = Math.floor((rules.bestOf||5)/2)+1;
+  var scanRequired = compScanRequired_(comp);
   var scan = payload.image ? saveScan_(payload.image, payload.mime, comp, round) : {url:'',error:''};
   var scanUrl = scan.url;
   if(payload.image&&!scanUrl)throw new Error('Scan upload failed: '+(scan.error||'No scan link returned'));
@@ -655,7 +656,7 @@ function commitResults_(payload) {
 
     if(l.appLink){
       if(appFix[fid]){
-        if(!scanUrl)throw new Error('A scanned sheet is required to link this result.');
+        if(!scanUrl){ if(scanRequired)throw new Error('A scanned sheet is required to link this result.'); skipped.push({fixtureId:fid,reason:'app entry kept (no scan for this competition)'}); return; }
         requireSb_(sbUpdate_('match_log', 'fixture_id=eq.'+encodeURIComponent(fid), {scan_link:scanUrl}));
         existingMatchIdsForFixture(fid).forEach(function(mid){ sbUpdate_('game_log','match_id=eq.'+encodeURIComponent(mid), {scan_link:scanUrl}); });
         skipped.push({fixtureId:fid,reason:'app entry',scanLinked:true});
@@ -668,7 +669,7 @@ function commitResults_(payload) {
       return;
     }
     if(!l.override && appFix[fid]){
-      if(!scanUrl)throw new Error('A scanned sheet is required to link this result.');
+      if(!scanUrl){ if(scanRequired)throw new Error('A scanned sheet is required to link this result.'); skipped.push({fixtureId:fid,reason:'app entry kept (no scan for this competition)'}); return; }
       requireSb_(sbUpdate_('match_log', 'fixture_id=eq.'+encodeURIComponent(fid), {scan_link:scanUrl}));
       skipped.push({fixtureId:fid, reason:'app entry exists', scanLinked:true});
       return;
@@ -2073,10 +2074,22 @@ function outputWorkbookId_(value){
  var m=v.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);if(m)v=m[1];
  if(!/^[A-Za-z0-9_-]{20,100}$/.test(v))throw new Error('Enter a Google Sheets workbook ID or URL.');return v;
 }
+// Whether this comp confirms scores against paper score-sheet scans. Defaults to true, and
+// also when the column hasn't been added yet (database/comp_scan_setting.sql).
+function compScanRequired_(comp){
+ try{var r=sbGet_('comps','select=scan_required&comp_ref=eq.'+encodeURIComponent(comp));
+  if(!r.ok||!r.data.length)return true;return r.data[0].scan_required!==false;}catch(e){return true;}
+}
+function setCompScanRequired_(comp,value){
+ var res=sbUpdate_('comps','comp_ref=eq.'+encodeURIComponent(comp),{scan_required:value===true||value==='true'});
+ if(!res.ok)throw new Error('Could not save the setting. Has database/comp_scan_setting.sql been run? '+res.error);
+ return {ok:true,scanRequired:compScanRequired_(comp)};
+}
 function getOutputConfig_(comp){
  var rows=requireSb_(sbGet_('comps','select=output_workbook_id&comp_ref=eq.'+encodeURIComponent(comp))).data;
  if(!rows.length)throw new Error('Competition not found.');var id=rows[0].output_workbook_id||'';
- return {ok:true,workbookId:id,url:id?'https://docs.google.com/spreadsheets/d/'+id+'/edit':'',message:id?'Output: Retro Results. Preview a completed, scan-linked round before sending.':'No output configured. Save the competition workbook ID below. It must contain the Retro Results template and be editable by the Apps Script owner.'};
+ var scanRequired=compScanRequired_(comp);
+ return {ok:true,scanRequired:scanRequired,workbookId:id,url:id?'https://docs.google.com/spreadsheets/d/'+id+'/edit':'',message:id?(scanRequired?'Output: Retro Results. Preview a completed, scan-linked round before sending.':'Output: Retro Results. Preview a completed round before sending (this competition does not use scanned sheets).'):'No output configured. Save the competition workbook ID below. It must contain the Retro Results template and be editable by the Apps Script owner.'};
 }
 function validateOutputWorkbook_(id){
  var ss=SpreadsheetApp.openById(id),sh=findSheet_(ss,'Retro Results');if(!sh)throw new Error('Workbook needs a Retro Results sheet.');
@@ -2099,8 +2112,8 @@ function outputRoundPlan_(comp,round){
  var fixtures=data.fixtures.filter(function(f){return Number(f.round)===round;}),byFixture={};data.matches.forEach(function(m){byFixture[m.fixture_id]=m;});
  if(!fixtures.length)throw new Error('No fixtures for this round.');
  var missing=fixtures.filter(function(f){return !byFixture[f.fixture_id];}).map(function(f){return f.fixture_id;});
- var scans=fixtures.filter(function(f){var m=byFixture[f.fixture_id];return m&&!m.scan_link;}).map(function(f){return f.fixture_id;});
- if(missing.length||scans.length)throw new Error('Round is not ready. Missing results: '+(missing.join(', ')||'none')+'. Missing scanned sheets: '+(scans.join(', ')||'none')+'. Commit/reconcile these scans before sending.');
+ var scans=cfg.scanRequired?fixtures.filter(function(f){var m=byFixture[f.fixture_id];return m&&!m.scan_link;}).map(function(f){return f.fixture_id;}):[];
+ if(missing.length||scans.length)throw new Error('Round is not ready. Missing results: '+(missing.join(', ')||'none')+(cfg.scanRequired?'. Missing scanned sheets: '+(scans.join(', ')||'none')+'. Commit/reconcile these scans before sending.':'. Enter these under Score sheets → Enter results manually.'));
  var first=ss.getRangeByName('Line1_Names'),start=first.getColumn()+2,header=first.getRow()-1,cols=_retroRoundCols_(sh,header,start);
  if(round>cols)throw new Error('Retro Results has no column for round '+round+'. Extend the sequential round headers before TOTAL, keeping the formulas.');
  var report=reportFromStandings_(s),ri=report.rounds.indexOf(round),writes=[],changes=[];
