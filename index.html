@@ -113,6 +113,7 @@
     padding:calc(10px + var(--safe-top)) 16px 8px}
   .scorehead .game{font-size:15px;font-weight:800;flex:1;text-align:center;min-width:0;overflow:hidden}
   .scorehead .game b{color:var(--ink)}
+  .scorehead .game .linklike .fa{width:18px;height:18px;vertical-align:-4px;margin-right:6px}
   .scorehead .game .linklike{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
   .hname{display:none;font-weight:800;font-size:15px;max-width:24vw;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -150,12 +151,12 @@
     font-weight:900;line-height:.9;letter-spacing:-.04em;font-size:min(26vh,40vw,180px)}
   .panel .tapcue{flex:none;text-align:center;font-size:12px;font-weight:800;
     letter-spacing:.12em;text-transform:uppercase;opacity:.72}
-  .gameball{display:none;position:absolute;top:20%;left:50%;transform:translateX(-50%);z-index:3;
+  .gameball{display:none;position:absolute;top:auto;bottom:10px;left:50%;transform:translateX(-50%);z-index:3;
     text-align:center;font-weight:900;font-size:15px;white-space:nowrap;
     letter-spacing:.1em;text-transform:uppercase;padding:7px 14px;border-radius:10px;
     background:#fff;color:#c0392b;box-shadow:0 2px 12px rgba(0,0,0,.22)}
   .gameball.show{display:block}
-  @media (max-width:767px){ .gameball{top:26%} }
+  @media (max-width:767px){ .gameball{bottom:6px;font-size:13px;padding:4px 12px} }
   .gameball.match{background:#c0392b;color:#fff}
   .serve{width:52px;height:52px;border-radius:14px;position:relative;
     background:rgba(20,20,28,.34);display:none;align-items:center;justify-content:center;
@@ -263,7 +264,7 @@
     .serve small::before{content:attr(data-l)}
     .serve::after{font-size:15px;top:4px;right:8px}
     .panel .pts{font-size:min(38vh,34vw,420px)}
-    .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:19%}
+    .gameball{font-size:23px;padding:12px 26px;border-radius:14px;letter-spacing:.12em;top:auto;bottom:14px}
     .panel .tapcue{font-size:15px}
     .footbar button{padding:14px;font-size:19px}
   }
@@ -333,6 +334,13 @@
   .overlay.active{display:flex}
   .sheet{background:var(--card);border-radius:22px;padding:24px;width:100%;max-width:420px;text-align:center}
   #gap .sheet{max-height:calc(100vh - 20px);max-height:calc(var(--vh,1vh) * 100 - 20px);max-height:calc(100dvh - 20px);overflow:auto}
+  #suddenDeath{position:fixed;inset:0;z-index:55;display:none;align-items:center;justify-content:center;pointer-events:none;background:rgba(192,57,43,.28)}
+  #suddenDeath.go{display:flex;animation:sdBg 2.4s ease-out forwards}
+  #suddenDeath span{font-weight:900;font-size:min(13vw,110px);line-height:1;color:#fff;text-align:center;padding:0 12px;letter-spacing:.02em;
+    text-shadow:0 4px 0 #7b1d13,0 8px 24px rgba(0,0,0,.45);animation:sdPop 2.4s cubic-bezier(.2,1.4,.4,1) forwards}
+  @keyframes sdPop{0%{transform:scale(.1) rotate(-12deg);opacity:0}15%{transform:scale(1.15) rotate(3deg);opacity:1}25%{transform:scale(1) rotate(-2deg)}35%{transform:translateX(-10px)}45%{transform:translateX(10px)}55%{transform:translateX(-6px)}65%{transform:translateX(0) scale(1.05)}85%{opacity:1}100%{transform:scale(1.4);opacity:0}}
+  @keyframes sdBg{0%{opacity:0}10%{opacity:1}75%{opacity:1}100%{opacity:0}}
+  @media (prefers-reduced-motion:reduce){#suddenDeath.go,#suddenDeath span{animation-duration:2.4s;animation-name:sdBg}}
   .rotatehint{position:fixed;top:0;right:0;bottom:0;left:0;z-index:60;background:var(--court);display:none;
     align-items:center;justify-content:center;text-align:center;padding:30px;
     font-size:21px;font-weight:800;color:var(--ink);line-height:1.4}
@@ -428,7 +436,7 @@
   <div class="scorehead">
     <button class="exit" id="exit">Exit</button>
     <span class="hname" id="hname0"></span>
-    <div class="game"><span id="courtTag" class="court-pill" style="display:none"></span><button id="abandonBtn" class="linklike">Match abandoned — nominate winner</button></div>
+    <div class="game"><span id="courtTag" class="court-pill" style="display:none"></span><button id="abandonBtn" class="linklike"><svg class="fa" viewBox="0 0 24 24" aria-hidden="true"><rect width="24" height="24" rx="5" fill="#1e8a4c"/><path fill="#fff" d="M10 4h4v6h6v4h-6v6h-4v-6H4v-4h6z"/></svg>Match abandoned / injury — nominate winner</button></div>
     <span class="hname" id="hname1"></span>
     <button class="exit" id="histBtn" style="color:var(--ink)">History</button>
   </div>
@@ -520,6 +528,7 @@
   </div>
 </section>
 
+<div id="suddenDeath" aria-hidden="true"><span>SUDDEN DEATH!!!</span></div>
 <div class="rotatehint" id="rotateHint"><div><span class="ic">↻</span>Turn your device to portrait to score</div></div>
 
 <div class="overlay" id="pendingSheet"><div class="sheet" style="max-height:85vh;overflow:auto"><h2>Pending results</h2><div id="pendingList"></div><button class="cta" id="pendingRetry">Retry sync</button><button class="cta ghost" id="pendingExport">Download a backup</button><button class="cta ghost" id="pendingClose">Close</button></div></div>
@@ -1786,6 +1795,13 @@ function flashMsg(text,cls,ms){
   clearTimeout(msgTimer);
   msgTimer=setTimeout(function(){el.classList.remove('show');},ms);
 }
+var sdTimer=null;
+function flashSuddenDeath_(){
+  var el=$('suddenDeath');if(!el)return;
+  el.classList.remove('go');void el.offsetWidth;el.classList.add('go');
+  clearTimeout(sdTimer);sdTimer=setTimeout(function(){el.classList.remove('go');},2450);
+  try{if(navigator.vibrate)navigator.vibrate([120,60,120]);}catch(e){}
+}
 function tap(i){
   var prevServer=M.server, prevGames=M.games.length;
   wonRally(M,i);
@@ -1794,6 +1810,8 @@ function tap(i){
   else if(M.games.length>prevGames){ flashMsg('Game — '+firstName(M.games[M.games.length-1].winner),'game',2800); }
   else if(M.server!==prevServer){ flashMsg('Hand-out — '+firstName(M.server)+' to serve','handout',1900); }
   else { flashMsg('Point — '+firstName(i),'point',1200); }
+  var tgt=M.config.pointsToWin;
+  if(!M.over&&M.games.length===prevGames&&!M.config.winByTwo&&M.points[0]===tgt-1&&M.points[1]===tgt-1)flashSuddenDeath_();
 }
 function openHistory(){
   var pl=M.config.players, n0=firstName(0), n1=firstName(1);
