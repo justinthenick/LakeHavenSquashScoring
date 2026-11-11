@@ -52,22 +52,22 @@ function doGet(e) {
       if (action === 'tie')      return out_(tieResults_(e.parameter.fixtureId || ''), e);
       if (action === 'players')  return out_({ ok:true, players: listPlayerNames_().map(function(p){return p.name;}), playerRecords:listPlayerNames_() }, e);
       if (action === 'addPlayer') return out_(resolveOrAddPlayer_(e.parameter.name || ''), e);
-      if (action === 'markArrival') return out_(markPlayerArrived(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
+      if (action === 'markArrival') return out_(markPlayerArrived_(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
       if (action === 'setCourt') { var cr = setFixtureCourt_(e.parameter.fixtureId, e.parameter.court); bumpFxGen_(); return out_(cr, e); }
       if (action === 'overrideCourt') { var cr = setFixtureCourtOverride_(e.parameter.fixtureId, e.parameter.court); bumpFxGen_(); return out_(cr, e); }
       if (action === 'clearCourtOverride') { var cr = clearFixtureCourtOverride_(e.parameter.fixtureId); bumpFxGen_(); return out_(cr, e); }
-      if (action === 'clearArrival') return out_(clearArrival(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
+      if (action === 'clearArrival') return out_(clearArrival_(e.parameter.fixtureId, e.parameter.playerId, e.parameter.date), e);
       if (action === 'arrivalStatus') {
         var fixtureIds = e.parameter.fixtureIds ? JSON.parse(e.parameter.fixtureIds) : [];
-        return out_(getArrivalStatusForFixtures(fixtureIds, e.parameter.date), e);
+        return out_(getArrivalStatusForFixtures_(fixtureIds, e.parameter.date), e);
       }
       if (action === 'unavailableOnDate') return out_(getUnavailablePlayerIds_(e.parameter.date), e);
       if (action === 'subNominations') {
         var subFxIds = e.parameter.fixtureIds ? JSON.parse(e.parameter.fixtureIds) : [];
         return out_(getSubNominationsForFixtures_(subFxIds), e);
       }
-      if (action === 'nominateSub') return out_(nominateSub(e.parameter.fixtureId, e.parameter.originalPlayerId, e.parameter.subPlayerId), e);
-      if (action === 'clearSubNomination') return out_(clearSubNomination(e.parameter.fixtureId, e.parameter.originalPlayerId), e);
+      if (action === 'nominateSub') return out_(nominateSub_(e.parameter.fixtureId, e.parameter.originalPlayerId, e.parameter.subPlayerId), e);
+      if (action === 'clearSubNomination') return out_(clearSubNomination_(e.parameter.fixtureId, e.parameter.originalPlayerId), e);
       return out_({ ok:true, msg:'Court Card backend live' }, e);
     } catch (err) { return out_({ ok:false, error:String(err) }, e); }
   }
@@ -2190,6 +2190,7 @@ function applyOutputCells_(sheet,requests){
 }
 
 function testInitMPM(){
+  assertAdmin_();
   try{var comp='MPM202609';var data=loadCompetitionData_(comp);Logger.log('Fixtures: '+data.fixtures.length);Logger.log('Matches: '+data.matches.length);Logger.log('Roster: '+data.roster.length);Logger.log('Teams: '+data.teams.length);var s=buildCompetitionStandings_(data,getRules_(comp));Logger.log('CurrentRoster: '+s.currentRoster.length);Logger.log('Rounds: '+JSON.stringify(s.rounds));initializeRetroResults_(comp,'1kwrwSooSPOp4Z8Y_A8p3Fc9NVaf8qM3VTKIeiOyfcjQ');Logger.log('OK');}catch(err){Logger.log('ERROR: '+err.message);throw err;}}
 function initializeRetroResults_(comp,workbookId){
   if(!comp||!workbookId)throw new Error('Competition and workbook ID required');
@@ -2236,7 +2237,7 @@ function venueForFixture_(fixtureId){
   if(!cRes.ok||!cRes.data.length)return null;
   return cRes.data[0].venue_id||null;
 }
-function markPlayerArrived(fixtureId,playerId,date){
+function markPlayerArrived_(fixtureId,playerId,date){
   if(!fixtureId||!playerId||!date)throw new Error('Missing parameters');
   var dateStr=String(date).split('T')[0];
   var payload = {fixture_id:fixtureId,player_id:playerId,venue_id:venueForFixture_(fixtureId),date:dateStr,arrived_at:new Date().toISOString()};
@@ -2249,14 +2250,14 @@ function markPlayerArrived(fixtureId,playerId,date){
   return result;
 }
 
-function getArrivalStatusForFixtures(fixtureIds,date){
+function getArrivalStatusForFixtures_(fixtureIds,date){
   if(!fixtureIds||!fixtureIds.length)return {ok:true,data:[]};
   var dateStr=String(date).split('T')[0];
   var query='select=fixture_id,player_id,arrived_at&fixture_id=in.('+fixtureIds.join(',')+')&date=eq.'+encodeURIComponent(dateStr);
   return sbGet_('player_arrivals',query);
 }
 
-function clearArrival(fixtureId,playerId,date){
+function clearArrival_(fixtureId,playerId,date){
   if(!fixtureId||!playerId||!date)throw new Error('Missing parameters');
   var dateStr=String(date).split('T')[0];
   var filter='fixture_id=eq.'+encodeURIComponent(fixtureId)+'&player_id=eq.'+encodeURIComponent(playerId)+'&date=eq.'+encodeURIComponent(dateStr);
@@ -2281,14 +2282,14 @@ function getSubNominationsForFixtures_(fixtureIds){
   }
   return res;
 }
-function nominateSub(fixtureId,originalPlayerId,subPlayerId){
+function nominateSub_(fixtureId,originalPlayerId,subPlayerId){
   fixtureId=String(fixtureId||'').trim();originalPlayerId=String(originalPlayerId||'').trim();subPlayerId=String(subPlayerId||'').trim();
   if(!fixtureId||!originalPlayerId||!subPlayerId)throw new Error('Missing parameters');
   if(subPlayerId===originalPlayerId)throw new Error('Substitute must be a different player.');
   var email=String(Session.getActiveUser().getEmail()||'');
   return sbUpsert_('fixture_sub_nominations',{fixture_id:fixtureId,original_player_id:originalPlayerId,sub_player_id:subPlayerId,nominated_by:email},'fixture_id,original_player_id');
 }
-function clearSubNomination(fixtureId,originalPlayerId){
+function clearSubNomination_(fixtureId,originalPlayerId){
   fixtureId=String(fixtureId||'').trim();originalPlayerId=String(originalPlayerId||'').trim();
   if(!fixtureId||!originalPlayerId)throw new Error('Missing parameters');
   var filter='fixture_id=eq.'+encodeURIComponent(fixtureId)+'&original_player_id=eq.'+encodeURIComponent(originalPlayerId);

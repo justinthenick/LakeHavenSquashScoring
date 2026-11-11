@@ -5,8 +5,8 @@ function check(name,run){run();console.log('PASS '+name);count++;}
 const site=fs.existsSync(path.join(base,'site/index.html'))?path.join(base,'site'):base;
 const frontend=fs.readFileSync(path.join(site,'index.html'),'utf8').match(/<script>([\s\S]*?)<\/script>/)[1];
 const ast=acorn.parse(frontend,{ecmaVersion:2022});
-let memory={};const elements=new Proxy({}, {get:(o,k)=>o[k]||(o[k]={textContent:'',disabled:false,value:'',classList:{add(){},remove(){},contains(){return false;}}})});
-const ctx={navigator:{},store:{get:k=>memory[k],set:(k,v)=>memory[k]=v,del:k=>delete memory[k],keys:()=>Object.keys(memory)},QKEY:'cc_queue',flushInFlight:null,document:{getElementById:id=>elements[id]},Date,JSON,Promise,setTimeout,clearTimeout};
+let memory={};const elements=new Proxy({}, {get:(o,k)=>o[k]||(o[k]={textContent:'',disabled:false,value:'',style:{},classList:{add(){},remove(){},contains(){return false;}}})});
+const ctx={CONFIG:{APPS_SCRIPT_URL:''},navigator:{},store:{get:k=>memory[k],set:(k,v)=>memory[k]=v,del:k=>delete memory[k],keys:()=>Object.keys(memory)},QKEY:'cc_queue',flushInFlight:null,document:{getElementById:id=>elements[id]},Date,JSON,Promise,setTimeout,clearTimeout};
 vm.createContext(ctx);vm.runInContext(ast.body.filter(n=>n.type==='FunctionDeclaration').map(n=>frontend.slice(n.start,n.end)).join('\n'),ctx);
 const cfg={players:[{name:'A'},{name:'B'}],pointsToWin:15,winByTwo:false,bestOf:5,firstServer:0};
 check('frontend and service worker parse',()=>new vm.Script(fs.readFileSync(path.join(site,'sw.js'),'utf8')));
