@@ -146,9 +146,40 @@
       <button class="tab" data-tab="subs">Subs</button>
       <button class="tab" data-tab="unavail">Player availability</button>
       <button class="tab" data-tab="courts">Venues &amp; courts</button>
+      <button class="tab" data-tab="players">Merge players</button>
       <button class="tab" data-tab="admins">Administrators</button>
     </div>
   </div>
+
+  <section class="tabpanel" id="tab-players">
+    <div class="card">
+      <h2>Merge duplicate players</h2>
+      <p class="muted">Finds players who look like the same person (same name, swapped order, typos, short vs long first names, shared email or phone). Pick the preferred record; everything on the others — results, games, rosters, subs, arrivals, absences — moves to it. You see exactly what will move before anything changes.</p>
+      <div class="row"><button class="cta" id="pmScan" type="button">Find duplicates</button><button class="ghost" id="pmClearIgnored" type="button">Show dismissed suggestions again</button></div>
+      <p id="pmStatus" role="status" aria-live="polite"></p>
+      <div id="pmGroups"></div>
+    </div>
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:8px">Merge two players manually</div>
+      <div class="hint" style="margin-bottom:12px">Use when the suggestions miss a pair, e.g. a nickname or a completely different spelling. Start typing a name and choose from the list.</div>
+      <div class="row">
+        <div style="flex:1;min-width:240px"><label class="f" for="pmKeepIn">Preferred player (keep)</label><input class="nm" id="pmKeepIn" list="pmList" autocomplete="off" placeholder="Name [ID]"></div>
+        <div style="flex:1;min-width:240px"><label class="f" for="pmDupIn">Duplicate (merge into preferred)</label><input class="nm" id="pmDupIn" list="pmList" autocomplete="off" placeholder="Name [ID]"></div>
+        <button class="cta" id="pmManualGo" type="button">Preview merge</button>
+      </div>
+      <datalist id="pmList"></datalist>
+    </div>
+    <div class="card" id="pmPreviewCard" style="display:none">
+      <div class="eyebrow" style="margin-bottom:8px">Review merge</div>
+      <div id="pmPreview"></div>
+      <div style="margin:12px 0">
+        <label style="display:block;margin-bottom:6px"><input type="radio" name="pmMode" value="inactive" checked> <b>Mark the duplicate inactive</b> (recommended) — hidden everywhere, but old devices and queued scores that still use its ID are redirected to the preferred player.</label>
+        <label style="display:block"><input type="radio" name="pmMode" value="delete"> <b>Delete the duplicate</b> — removes the record completely.</label>
+      </div>
+      <div class="row"><button class="cta" id="pmConfirm" type="button">Merge now</button><button class="ghost" id="pmCancel" type="button">Cancel</button></div>
+      <p id="pmResult" role="status" aria-live="polite"></p>
+    </div>
+  </section>
 
   <section class="tabpanel" id="tab-admins">
     <div class="card">
@@ -317,6 +348,7 @@ function switchTab(id){
   if(id==='results'){loadMrRounds();loadOutputConfig();}
   if(id==='onboard')renderOnboardTab();
   if(id==='admins')loadAdminAccess();
+  if(id==='players'){fillPmList_();if(!PM.scanned)pmScan();}
   if(id==='unavail')loadUnavailability();
   if(id==='courts'){loadVenues();loadCvComps_();}
   if(id==='onboard')loadVenues();
@@ -359,6 +391,81 @@ function loadContacts(){
     .withFailureHandler(function(){}).getContacts();
 }
 loadContacts();
+
+
+/* ---------- Merge players tab ---------- */
+var PM={scanned:false,keep:'',dups:[],busy:false,names:{}};
+function pmSay(t){$('pmStatus').textContent=t||'';}
+function pmErr(e){PM.busy=false;pmSay('');$('pmResult').textContent=e&&e.message?e.message:String(e);$('pmScan').disabled=false;}
+function fillPmList_(){
+  PM.names={};
+  $('pmList').innerHTML=ALLCONTACTS.slice().sort(function(a,b){return String(a.name).localeCompare(String(b.name));}).map(function(c){var l=c.name+' ['+c.id+']';PM.names[l]=c.id;return '<option value="'+esc(l)+'">';}).join('');
+}
+function pmIdFromInput_(v){v=String(v||'').trim();if(PM.names[v])return PM.names[v];var m=v.match(/\[([^\]]+)\]\s*$/);return m?m[1]:'';}
+function pmScan(){
+  if(PM.busy)return;PM.busy=true;$('pmScan').disabled=true;pmSay('Looking for duplicates…');$('pmGroups').innerHTML='';
+  google.script.run.withSuccessHandler(function(res){PM.busy=false;PM.scanned=true;$('pmScan').disabled=false;pmRender(res);}).withFailureHandler(function(e){PM.busy=false;$('pmScan').disabled=false;pmSay(e&&e.message?e.message:String(e));}).findDuplicatePlayers();
+}
+function pmRender(res){
+  var host=$('pmGroups');host.innerHTML='';
+  pmSay(res.groups.length?res.groups.length+' possible duplicate group'+(res.groups.length===1?'':'s')+' among '+res.total+' players.':'No likely duplicates found among '+res.total+' players.');
+  res.groups.forEach(function(g,gi){
+    var box=document.createElement('div');box.className='card';box.style.background='#fbfaf6';
+    var h='<div class="muted" style="margin-bottom:8px"><b>'+esc(g.reasons.join(' · '))+'</b></div>';
+    g.players.forEach(function(p){
+      h+='<label style="display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-top:1px solid var(--line)"><input type="radio" name="pmk'+gi+'" value="'+esc(p.id)+'"'+(p.id===g.suggestedKeep?' checked':'')+' style="margin-top:4px"><span><b>'+esc(p.name)+'</b> <span class="muted">['+esc(p.id)+(p.legacy?' · original':'')+']</span><br><span class="muted">'+esc([p.grade,p.email,p.phone].filter(Boolean).join(' · ')||'no contact details')+'</span></span></label>';
+    });
+    h+='<div class="row" style="margin-top:10px"><button class="cta" type="button" data-act="merge" style="padding:10px 16px;font-size:14px">Keep selected, merge the others…</button><button class="ghost" type="button" data-act="ignore">Not duplicates</button></div>';
+    box.innerHTML=h;host.appendChild(box);
+    box.querySelector('[data-act=merge]').onclick=function(){
+      var sel=box.querySelector('input[name=pmk'+gi+']:checked');if(!sel)return;
+      pmStartPreview(sel.value,g.players.map(function(p){return p.id;}).filter(function(id){return id!==sel.value;}));
+    };
+    box.querySelector('[data-act=ignore]').onclick=function(){
+      var ids=g.players.map(function(p){return p.id;}),pairs=[];
+      for(var i=0;i<ids.length;i++)for(var j=i+1;j<ids.length;j++)pairs.push([ids[i],ids[j]]);
+      var left=pairs.length;
+      pairs.forEach(function(pr){google.script.run.withSuccessHandler(function(){if(--left===0)box.remove();}).withFailureHandler(pmErr).ignoreDuplicatePair(pr[0],pr[1]);});
+    };
+  });
+}
+function pmStartPreview(keep,dups){
+  PM.keep=keep;PM.dups=dups;$('pmResult').textContent='Checking what would move…';$('pmPreviewCard').style.display='block';$('pmPreview').innerHTML='';$('pmConfirm').disabled=true;
+  $('pmPreviewCard').scrollIntoView({behavior:'smooth',block:'start'});
+  google.script.run.withSuccessHandler(function(res){
+    $('pmResult').textContent='';$('pmConfirm').disabled=false;
+    var h='';
+    res.previews.forEach(function(pv,i){
+      var k=pv.keep,d=pv.dup;
+      if(i===0)h+='<p><b>Preferred (kept):</b> '+esc(k.name)+' <span class="muted">['+esc(k.id)+']</span></p>';
+      h+='<div style="border-top:1px solid var(--line);padding:8px 0"><p style="margin:0 0 4px"><b>Merge:</b> '+esc(d.name)+' <span class="muted">['+esc(d.id)+']</span></p>';
+      h+=pv.moves.length?'<ul style="margin:4px 0 0 18px;padding:0">'+pv.moves.map(function(m){return '<li>'+esc(m.rows)+' row'+(m.rows==1?'':'s')+' in <code>'+esc(m.table)+'</code> ('+esc(m.column)+')</li>';}).join('')+'</ul>':'<p class="muted" style="margin:0">Nothing is linked to this record.</p>';
+      var fill=[];['email','phone','grade'].forEach(function(f){if(!k[f]&&d[f])fill.push(f+' "'+d[f]+'"');});
+      if(fill.length)h+='<p class="muted" style="margin:6px 0 0">Will fill blank details on the preferred player: '+esc(fill.join(', '))+'.</p>';
+      h+='</div>';
+    });
+    $('pmPreview').innerHTML=h;
+  }).withFailureHandler(function(e){$('pmPreviewCard').style.display='block';$('pmResult').textContent=e&&e.message?e.message:String(e);}).previewPlayerMerge(keep,dups);
+}
+$('pmScan').onclick=pmScan;
+$('pmClearIgnored').onclick=function(){google.script.run.withSuccessHandler(function(){pmScan();}).withFailureHandler(pmErr).clearIgnoredDuplicates();};
+$('pmManualGo').onclick=function(){
+  var k=pmIdFromInput_($('pmKeepIn').value),d=pmIdFromInput_($('pmDupIn').value);
+  if(!k||!d){$('pmPreviewCard').style.display='block';$('pmPreview').innerHTML='';$('pmResult').textContent='Pick both players from the list (the name followed by its [ID]).';return;}
+  pmStartPreview(k,[d]);
+};
+$('pmCancel').onclick=function(){$('pmPreviewCard').style.display='none';};
+$('pmConfirm').onclick=function(){
+  if(PM.busy)return;
+  var del=document.querySelector('input[name=pmMode]:checked').value==='delete';
+  if(!confirm((del?'DELETE':'Merge and deactivate')+' '+PM.dups.length+' duplicate record'+(PM.dups.length===1?'':'s')+'? This cannot be undone from the admin screen.'))return;
+  PM.busy=true;$('pmConfirm').disabled=true;$('pmResult').textContent='Merging…';
+  google.script.run.withSuccessHandler(function(res){
+    PM.busy=false;$('pmResult').textContent='Done. '+res.results.length+' player record'+(res.results.length===1?'':'s')+' merged'+(res.mode==='deleted'?' and deleted':' and marked inactive')+'.';
+    $('pmPreview').innerHTML='';$('pmConfirm').disabled=true;$('pmKeepIn').value='';$('pmDupIn').value='';
+    loadContacts();setTimeout(function(){fillPmList_();pmScan();},1500);
+  }).withFailureHandler(function(e){PM.busy=false;$('pmConfirm').disabled=false;pmErr(e);}).mergePlayers(PM.keep,PM.dups,del);
+};
 
 /* ---------- Player availability tab ---------- */
 var uaSelectedPlayerId='', uaBusy=false;

@@ -109,3 +109,8 @@ function saveOutputConfig(){assertAdmin_();return saveOutputConfig_.apply(null,a
 function previewRoundOutput(){assertAdmin_();return previewRoundOutput_.apply(null,arguments);}
 
 function sendRoundOutput(){assertAdmin_();return sendRoundOutput_.apply(null,arguments);}
+function findDuplicatePlayers(){assertAdmin_();return findDuplicatePlayers_.apply(null,arguments);}
+function previewPlayerMerge(){assertAdmin_();return previewPlayerMerge_.apply(null,arguments);}
+function mergePlayers(){assertAdmin_();try{return mergePlayers_.apply(null,arguments);}finally{bumpFxGen_();}}
+function ignoreDuplicatePair(){assertAdmin_();return ignoreDuplicatePair_.apply(null,arguments);}
+function clearIgnoredDuplicates(){assertAdmin_();return clearIgnoredDuplicates_.apply(null,arguments);}
