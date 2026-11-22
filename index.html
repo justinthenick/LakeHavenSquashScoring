@@ -334,6 +334,28 @@
   .overlay.active{display:flex}
   .sheet{background:var(--card);border-radius:22px;padding:24px;width:100%;max-width:420px;text-align:center}
   #gap .sheet{max-height:calc(100vh - 20px);max-height:calc(var(--vh,1vh) * 100 - 20px);max-height:calc(100dvh - 20px);overflow:auto}
+  #warmup{position:fixed;inset:0;z-index:58;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0f1b24;color:#fff;text-align:center;padding:20px}
+  #warmup.on{display:flex}
+  #warmup .wl{font-weight:800;letter-spacing:.2em;text-transform:uppercase;font-size:clamp(16px,3.2vw,26px);opacity:.8}
+  #warmup .wt{font-weight:900;font-size:min(30vw,260px);line-height:1;font-variant-numeric:tabular-nums}
+  #warmup .wv{font-weight:700;font-size:clamp(16px,3vw,26px);opacity:.85}
+  #warmup .wbar{width:min(80vw,640px);height:12px;border-radius:6px;background:rgba(255,255,255,.18);overflow:hidden}
+  #warmup .wbar i{display:block;height:100%;width:100%;background:#2bb673;transition:width .25s linear}
+  #warmup .wmsg{min-height:1.4em;font-weight:900;font-size:clamp(20px,4.5vw,40px);letter-spacing:.04em}
+  #warmup .wbtns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:8px}
+  #warmup .wbtns button{border:none;border-radius:14px;font-weight:800;font-size:clamp(16px,2.6vw,22px);padding:16px 26px;cursor:pointer;font-family:inherit}
+  #warmup #wuGo{background:#2bb673;color:#04210f}
+  #warmup #wuPause{background:rgba(255,255,255,.16);color:#fff}
+  #warmup.half .wbar i{background:#f2a900}
+  #warmup.half .wmsg{color:#f2a900;animation:wuFlash .5s 4}
+  #warmup.done{background:#7b1d13;animation:wuDone .6s infinite alternate}
+  #warmup.done .wbar i{background:#fff}
+  @keyframes wuFlash{50%{opacity:.2}}
+  @keyframes wuDone{from{background:#7b1d13}to{background:#c0392b}}
+  @media (prefers-reduced-motion:reduce){#warmup.done{animation:none}#warmup.half .wmsg{animation:none}}
+  .warmopt{display:flex;align-items:center;gap:10px;margin:14px 0 4px;font-weight:700;font-size:15px}
+  .warmopt input{width:20px;height:20px}
+  .warmopt button{margin-left:auto;background:transparent;border:1px solid var(--line);border-radius:10px;padding:6px 12px;font-weight:700;font-size:13px;color:var(--muted)}
   #suddenDeath{position:fixed;inset:0;z-index:55;display:none;align-items:center;justify-content:center;pointer-events:none;background:rgba(192,57,43,.28)}
   #suddenDeath.go{display:flex;animation:sdBg 2.4s ease-out forwards}
   #suddenDeath span{font-weight:900;font-size:min(13vw,110px);line-height:1;color:#fff;text-align:center;padding:0 12px;letter-spacing:.02em;
@@ -425,6 +447,7 @@
       <button data-v="1" id="fs2">Player 2</button>
     </div>
 
+    <div class="warmopt"><input type="checkbox" id="warmupOn" checked><label for="warmupOn">2-minute warm-up timer (with sound)</label><button type="button" id="warmupTest">Test sound</button></div>
     <button class="cta" id="start">Start scoring</button>
     <button class="cta ghost" id="scratchBtn" style="display:none">Neither player here — mark match as scratched</button>
     <div class="hint" style="margin-top:14px">Server retains serve and swaps box each point won. Lose the rally and the serve passes over — new server starts on the right (tap the box badge to move left).</div>
@@ -528,6 +551,14 @@
   </div>
 </section>
 
+<div id="warmup" role="alertdialog" aria-live="assertive" aria-label="Warm-up timer">
+  <div class="wl">Warm-up</div>
+  <div class="wv" id="wuVs"></div>
+  <div class="wt" id="wuTime">2:00</div>
+  <div class="wbar"><i id="wuBar"></i></div>
+  <div class="wmsg" id="wuMsg"></div>
+  <div class="wbtns"><button type="button" id="wuPause">Pause</button><button type="button" id="wuGo">Start match now</button></div>
+</div>
 <div id="suddenDeath" aria-hidden="true"><span>SUDDEN DEATH!!!</span></div>
 <div class="rotatehint" id="rotateHint"><div><span class="ic">↻</span>Turn your device to portrait to score</div></div>
 
@@ -1640,6 +1671,86 @@ $('scratchBtn').onclick=function(){
   }).then(function(){btn.disabled=false;btn.textContent='Neither player here — mark match as scratched';});
 };
 
+/* ---- warm-up timer: 2:00 countdown, audible half-way and time-up alerts ---- */
+var WARMUP_SEC=120, wu=null, audioCtx=null;
+try{if(store.get('cc_warmup')==='0')$('warmupOn').checked=false;}catch(e){}
+$('warmupOn').onchange=function(){try{store.set('cc_warmup',this.checked?'1':'0');}catch(e){}};
+function unlockAudio_(){
+  try{
+    var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+    if(!audioCtx)audioCtx=new AC();
+    if(audioCtx.state==='suspended')audioCtx.resume();
+  }catch(e){}
+}
+// seq: [[freqHz, startSec, durSec], ...]  loud square/sine mix so it carries across a court
+function playTones_(seq,vol){
+  try{
+    unlockAudio_();if(!audioCtx)return;var t0=audioCtx.currentTime+0.03;
+    seq.forEach(function(n){
+      var o=audioCtx.createOscillator(),g=audioCtx.createGain();
+      o.type='square';o.frequency.value=n[0];
+      g.gain.setValueAtTime(0.0001,t0+n[1]);g.gain.exponentialRampToValueAtTime(vol||0.5,t0+n[1]+0.02);
+      g.gain.setValueAtTime(vol||0.5,t0+n[1]+n[2]-0.04);g.gain.exponentialRampToValueAtTime(0.0001,t0+n[1]+n[2]);
+      o.connect(g);g.connect(audioCtx.destination);o.start(t0+n[1]);o.stop(t0+n[1]+n[2]+0.02);
+    });
+  }catch(e){}
+}
+function speak_(text){
+  try{if(window.speechSynthesis){window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(text);u.rate=0.95;u.volume=1;window.speechSynthesis.speak(u);}}catch(e){}
+}
+function warmupHalfAlert_(){
+  playTones_([[880,0,0.22],[880,0.32,0.22]],0.55);
+  speak_('One minute remaining');
+  try{if(navigator.vibrate)navigator.vibrate([200,100,200]);}catch(e){}
+}
+function warmupDoneAlert_(){
+  playTones_([[660,0,0.25],[880,0.35,0.25],[660,0.7,0.25],[880,1.05,0.25],[1100,1.45,0.9]],0.6);
+  setTimeout(function(){speak_('Time. Start the match.');},1500);
+  try{if(navigator.vibrate)navigator.vibrate([400,150,400,150,800]);}catch(e){}
+}
+function warmupPaint_(){
+  if(!wu)return;
+  var rem=wu.paused?wu.remaining:Math.max(0,Math.ceil((wu.endAt-Date.now())/1000));
+  $('wuTime').textContent=Math.floor(rem/60)+':'+('0'+(rem%60)).slice(-2);
+  $('wuBar').style.width=(rem/WARMUP_SEC*100)+'%';
+  return rem;
+}
+function warmupTick_(){
+  if(!wu||wu.paused)return;
+  var rem=warmupPaint_();
+  if(!wu.halfDone&&rem<=WARMUP_SEC/2){
+    wu.halfDone=true;var el=$('warmup');el.classList.add('half');$('wuMsg').textContent='ONE MINUTE LEFT';warmupHalfAlert_();
+  }
+  if(rem<=0&&!wu.over){
+    wu.over=true;clearInterval(wu.timer);var el2=$('warmup');el2.classList.remove('half');el2.classList.add('done');
+    $('wuMsg').textContent='TIME UP — START THE MATCH';$('wuPause').style.display='none';$('wuGo').textContent='Start match';
+    warmupDoneAlert_();
+  }
+}
+function startWarmup_(done){
+  unlockAudio_();
+  wu={endAt:Date.now()+WARMUP_SEC*1000,remaining:WARMUP_SEC,paused:false,halfDone:false,over:false,done:done,timer:null};
+  var el=$('warmup');el.className='on';$('wuMsg').textContent='';$('wuPause').style.display='';$('wuPause').textContent='Pause';$('wuGo').textContent='Start match now';
+  var n=M.config.players;$('wuVs').textContent=n[0].name+'  v  '+n[1].name;
+  warmupPaint_();
+  wu.timer=setInterval(warmupTick_,250);
+  keepAwake();
+}
+function endWarmup_(){
+  if(!wu)return;clearInterval(wu.timer);try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
+  var cb=wu.done;wu=null;$('warmup').className='';
+  if(cb)cb();
+}
+$('wuGo').onclick=function(){endWarmup_();};
+$('wuPause').onclick=function(){
+  if(!wu||wu.over)return;
+  if(wu.paused){wu.endAt=Date.now()+wu.remaining*1000;wu.paused=false;$('wuPause').textContent='Pause';}
+  else{wu.remaining=Math.max(0,Math.ceil((wu.endAt-Date.now())/1000));wu.paused=true;$('wuPause').textContent='Resume';}
+  warmupPaint_();
+};
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&wu){warmupTick_();}});
+$('warmupTest').onclick=function(){playTones_([[880,0,0.22],[880,0.32,0.22],[1100,0.7,0.5]],0.55);speak_('Sound check');};
+
 /* ---- start match ---- */
 $('start').onclick=function(){
   var n=names();
@@ -1664,7 +1775,10 @@ $('start').onclick=function(){
   M.timing={matchSec:0,gameSec:0,breakSec:0,breakActive:false,
     games:[{startTs:clockNow(),endTs:'',durationSec:0,breakBeforeSec:0}]};
   applyMatchChrome(cfg);
-  startTimers();renderScore();show('score');
+  renderScore();show('score');
+  if($('warmupOn').checked){
+    startWarmup_(function(){M.timing.games[0].startTs=clockNow();startTimers();});
+  }else{startTimers();}
 };
 function isLight(hex){var c=hex.replace('#','');if(c.length===3)c=c.replace(/./g,'$&$&');
   var r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),b=parseInt(c.substr(4,2),16);
