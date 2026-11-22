@@ -334,16 +334,17 @@
   .overlay.active{display:flex}
   .sheet{background:var(--card);border-radius:22px;padding:24px;width:100%;max-width:420px;text-align:center}
   #gap .sheet{max-height:calc(100vh - 20px);max-height:calc(var(--vh,1vh) * 100 - 20px);max-height:calc(100dvh - 20px);overflow:auto}
-  #warmup{position:fixed;inset:0;z-index:58;display:none;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0f1b24;color:#fff;text-align:center;padding:20px}
+  #warmup{flex:1;min-height:0;margin:6px 10px 8px;border-radius:22px;display:none;flex-direction:column;align-items:center;justify-content:center;gap:clamp(6px,1.6vh,14px);background:#0f1b24;color:#fff;text-align:center;padding:12px;overflow:hidden}
+  #score.warming .arena,#score.warming .footbar{display:none}
   #warmup.on{display:flex}
   #warmup .wl{font-weight:800;letter-spacing:.2em;text-transform:uppercase;font-size:clamp(16px,3.2vw,26px);opacity:.8}
-  #warmup .wt{font-weight:900;font-size:min(30vw,260px);line-height:1;font-variant-numeric:tabular-nums}
+  #warmup .wt{font-weight:900;font-size:min(26vw,38vh,240px);line-height:1;font-variant-numeric:tabular-nums}
   #warmup .wv{font-weight:700;font-size:clamp(16px,3vw,26px);opacity:.85}
   #warmup .wbar{width:min(80vw,640px);height:12px;border-radius:6px;background:rgba(255,255,255,.18);overflow:hidden}
   #warmup .wbar i{display:block;height:100%;width:100%;background:#2bb673;transition:width .25s linear}
   #warmup .wmsg{min-height:1.4em;font-weight:900;font-size:clamp(20px,4.5vw,40px);letter-spacing:.04em}
   #warmup .wbtns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:8px}
-  #warmup .wbtns button{border:none;border-radius:14px;font-weight:800;font-size:clamp(16px,2.6vw,22px);padding:16px 26px;cursor:pointer;font-family:inherit}
+  #warmup .wbtns button{border:none;border-radius:14px;font-weight:800;font-size:clamp(16px,2.6vw,22px);padding:14px 24px;cursor:pointer;font-family:inherit}
   #warmup #wuGo{background:#2bb673;color:#04210f}
   #warmup #wuPause{background:rgba(255,255,255,.16);color:#fff}
   #warmup.half .wbar i{background:#f2a900}
@@ -472,6 +473,14 @@
     <div class="stat"><span class="sl">Match clock</span><b id="matchClock">00:00</b></div>
   </div>
   <div class="msgbar"><span id="msg" class="msg"></span></div>
+  <div id="warmup" role="timer" aria-live="polite" aria-label="Warm-up timer">
+    <div class="wl">Warm-up</div>
+    <div class="wv" id="wuVs"></div>
+    <div class="wt" id="wuTime">2:00</div>
+    <div class="wbar"><i id="wuBar"></i></div>
+    <div class="wmsg" id="wuMsg"></div>
+    <div class="wbtns"><button type="button" id="wuPause">Pause</button><button type="button" id="wuGo">Start match now</button></div>
+  </div>
   <div class="arena">
     <button class="panel" id="panel0">
       <span class="pname" id="name0">Player 1</span>
@@ -551,14 +560,6 @@
   </div>
 </section>
 
-<div id="warmup" role="alertdialog" aria-live="assertive" aria-label="Warm-up timer">
-  <div class="wl">Warm-up</div>
-  <div class="wv" id="wuVs"></div>
-  <div class="wt" id="wuTime">2:00</div>
-  <div class="wbar"><i id="wuBar"></i></div>
-  <div class="wmsg" id="wuMsg"></div>
-  <div class="wbtns"><button type="button" id="wuPause">Pause</button><button type="button" id="wuGo">Start match now</button></div>
-</div>
 <div id="suddenDeath" aria-hidden="true"><span>SUDDEN DEATH!!!</span></div>
 <div class="rotatehint" id="rotateHint"><div><span class="ic">↻</span>Turn your device to portrait to score</div></div>
 
@@ -801,6 +802,7 @@ if(Math.min(screen.width||0,screen.height||0)>=600)document.body.classList.add('
 document.addEventListener('focusin',function(e){if(e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))document.body.classList.add('typing');});
 document.addEventListener('focusout',function(){setTimeout(function(){var a=document.activeElement;if(!(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)))document.body.classList.remove('typing');},50);});
 function show(scr){
+  if(scr!=='score'&&typeof cancelWarmup_==='function')cancelWarmup_();
   ['setup','score','summary'].forEach(function(s){$(s).classList.toggle('active',s===scr);});
   // Lock page scroll on the score screen so it can't be dragged/overscrolled; keep normal
   // flow (so the header sits below the browser bar, not hidden under it).
@@ -1730,7 +1732,7 @@ function warmupTick_(){
 function startWarmup_(done){
   unlockAudio_();
   wu={endAt:Date.now()+WARMUP_SEC*1000,remaining:WARMUP_SEC,paused:false,halfDone:false,over:false,done:done,timer:null};
-  var el=$('warmup');el.className='on';$('wuMsg').textContent='';$('wuPause').style.display='';$('wuPause').textContent='Pause';$('wuGo').textContent='Start match now';
+  $('score').classList.add('warming');var el=$('warmup');el.className='on';$('wuMsg').textContent='';$('wuPause').style.display='';$('wuPause').textContent='Pause';$('wuGo').textContent='Start match now';
   var n=M.config.players;$('wuVs').textContent=n[0].name+'  v  '+n[1].name;
   warmupPaint_();
   wu.timer=setInterval(warmupTick_,250);
@@ -1738,8 +1740,12 @@ function startWarmup_(done){
 }
 function endWarmup_(){
   if(!wu)return;clearInterval(wu.timer);try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
-  var cb=wu.done;wu=null;$('warmup').className='';
+  var cb=wu.done;wu=null;$('warmup').className='';$('score').classList.remove('warming');
   if(cb)cb();
+}
+function cancelWarmup_(){
+  if(!wu)return;clearInterval(wu.timer);try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
+  wu=null;$('warmup').className='';$('score').classList.remove('warming');
 }
 $('wuGo').onclick=function(){endWarmup_();};
 $('wuPause').onclick=function(){
