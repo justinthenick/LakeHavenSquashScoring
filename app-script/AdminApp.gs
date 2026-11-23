@@ -2085,11 +2085,24 @@ function setCompScanRequired_(comp,value){
  if(!res.ok)throw new Error('Could not save the setting. Has database/comp_scan_setting.sql been run? '+res.error);
  return {ok:true,scanRequired:compScanRequired_(comp)};
 }
+// Warm-up timer length for this comp, in seconds (0 = off). Defaults to 180, also when the column
+// hasn't been added yet (database/comp_warmup_setting.sql).
+function compWarmupSeconds_(comp){
+ try{var r=sbGet_('comps','select=warmup_seconds&comp_ref=eq.'+encodeURIComponent(comp));
+  if(!r.ok||!r.data.length)return 180;var v=r.data[0].warmup_seconds;return v==null?180:(Number(v)||0);}catch(e){return 180;}
+}
+function setCompWarmupSeconds_(comp,seconds){
+ var n=Math.round(Number(seconds));
+ if(!(n===0||(n>=30&&n<=900)))throw new Error('Warm-up must be off, or between 30 seconds and 15 minutes.');
+ var res=sbUpdate_('comps','comp_ref=eq.'+encodeURIComponent(comp),{warmup_seconds:n});
+ if(!res.ok)throw new Error('Could not save the setting. Has database/comp_warmup_setting.sql been run? '+res.error);
+ return {ok:true,warmupSeconds:compWarmupSeconds_(comp)};
+}
 function getOutputConfig_(comp){
  var rows=requireSb_(sbGet_('comps','select=output_workbook_id&comp_ref=eq.'+encodeURIComponent(comp))).data;
  if(!rows.length)throw new Error('Competition not found.');var id=rows[0].output_workbook_id||'';
  var scanRequired=compScanRequired_(comp);
- return {ok:true,scanRequired:scanRequired,workbookId:id,url:id?'https://docs.google.com/spreadsheets/d/'+id+'/edit':'',message:id?(scanRequired?'Output: Retro Results. Preview a completed, scan-linked round before sending.':'Output: Retro Results. Preview a completed round before sending (this competition does not use scanned sheets).'):'No output configured. Save the competition workbook ID below. It must contain the Retro Results template and be editable by the Apps Script owner.'};
+ return {ok:true,scanRequired:scanRequired,warmupSeconds:compWarmupSeconds_(comp),workbookId:id,url:id?'https://docs.google.com/spreadsheets/d/'+id+'/edit':'',message:id?(scanRequired?'Output: Retro Results. Preview a completed, scan-linked round before sending.':'Output: Retro Results. Preview a completed round before sending (this competition does not use scanned sheets).'):'No output configured. Save the competition workbook ID below. It must contain the Retro Results template and be editable by the Apps Script owner.'};
 }
 function validateOutputWorkbook_(id){
  var ss=SpreadsheetApp.openById(id),sh=findSheet_(ss,'Retro Results');if(!sh)throw new Error('Workbook needs a Retro Results sheet.');

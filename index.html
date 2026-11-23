@@ -200,6 +200,12 @@
   .gaprow.gaptot{font-weight:900;border-bottom:none;background:var(--card);font-size:17px}
   .gaptie{text-align:left}
   .tiehead{font-size:20px;font-weight:900;text-align:center;margin:2px 0 10px;letter-spacing:.01em}
+  .gapdetail{padding:6px 12px 10px;background:#f4f7fa;border-bottom:1px solid var(--line);font-size:14px}
+  .gapdetail .gdline{margin-bottom:4px}
+  .gapdetail .gdbits{display:flex;flex-wrap:wrap;gap:4px 16px;color:var(--muted)}
+  .gapdetail .gdbits b{color:var(--ink)}
+  .tiedetail{padding:4px 12px 10px;background:#f4f7fa;border-bottom:1px solid var(--line)}
+  .tiedetail .tdline{font-size:13px;color:var(--muted);margin:2px 0 4px}
   .tielines{border:1px solid var(--line);border-radius:14px;overflow:hidden}
   .tierow{display:grid;grid-template-columns:28px 32px 1fr auto;grid-gap:6px;gap:6px;align-items:center;
     padding:9px 10px;border-bottom:1px solid var(--line);font-size:15px}
@@ -345,7 +351,10 @@
   #warmup .wmsg{min-height:1.4em;font-weight:900;font-size:clamp(20px,4.5vw,40px);letter-spacing:.04em}
   #warmup .wbtns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:8px}
   #warmup .wbtns button{border:none;border-radius:14px;font-weight:800;font-size:clamp(16px,2.6vw,22px);padding:14px 24px;cursor:pointer;font-family:inherit}
-  #warmup #wuGo{background:#2bb673;color:#04210f}
+  #warmup .wgo{background:#2bb673;color:#04210f}
+  #warmup .wstart{width:100%;max-width:760px}
+  #warmup .wstart button{flex:1 1 220px}
+  #warmup.ready .wt,#warmup.ready .wbar,#warmup.ready #wuPause{display:none}
   #warmup #wuPause{background:rgba(255,255,255,.16);color:#fff}
   #warmup.half .wbar i{background:#f2a900}
   #warmup.half .wmsg{color:#f2a900;animation:wuFlash .5s 4}
@@ -442,13 +451,7 @@
       <div><label class="field">Referee</label><input id="ref" placeholder="Ref name" autocomplete="off"><div id="sugRef" class="suggest"></div></div>
     </div>
 
-    <label class="field">First serve</label>
-    <div class="toggle" id="firstServe">
-      <button data-v="0" aria-pressed="true" id="fs1">Player 1</button>
-      <button data-v="1" id="fs2">Player 2</button>
-    </div>
-
-    <div class="warmopt"><input type="checkbox" id="warmupOn" checked><label for="warmupOn">2-minute warm-up timer (with sound)</label><button type="button" id="warmupTest">Test sound</button></div>
+    <div class="warmopt" id="warmopt"><input type="checkbox" id="warmupOn" checked><label for="warmupOn" id="warmupLbl">Warm-up timer (with sound)</label><button type="button" id="warmupTest">Test sound</button></div>
     <button class="cta" id="start">Start scoring</button>
     <button class="cta ghost" id="scratchBtn" style="display:none">Neither player here — mark match as scratched</button>
     <div class="hint" style="margin-top:14px">Server retains serve and swaps box each point won. Lose the rally and the serve passes over — new server starts on the right (tap the box badge to move left).</div>
@@ -479,7 +482,8 @@
     <div class="wt" id="wuTime">2:00</div>
     <div class="wbar"><i id="wuBar"></i></div>
     <div class="wmsg" id="wuMsg"></div>
-    <div class="wbtns"><button type="button" id="wuPause">Pause</button><button type="button" id="wuGo">Start match now</button></div>
+    <div class="wbtns"><button type="button" id="wuPause">Pause</button></div>
+    <div class="wbtns wstart"><button type="button" id="wuGo0" class="wgo"></button><button type="button" id="wuGo1" class="wgo"></button></div>
   </div>
   <div class="arena">
     <button class="panel" id="panel0">
@@ -836,11 +840,10 @@ function wireToggle(host,cb){
       btn.setAttribute('aria-pressed','true');if(cb)cb(btn.dataset.v);};
   });
 }
-wireToggle($('firstServe'));
 
 function pressedVal(host){var b=host.querySelector('[aria-pressed="true"]');return b?b.dataset.v:null;}
 function names(){return[$('n1').value.trim()||'Player 1',$('n2').value.trim()||'Player 2'];}
-function refreshFirstServeLabels(){var n=names();$('fs1').textContent=n[0];$('fs2').textContent=n[1];if($('hcL1')){$('hcL1').textContent=n[0]+' starts each game on';$('hcL2').textContent=n[1]+' starts each game on';}}
+function refreshFirstServeLabels(){var n=names();if($('hcL1')){$('hcL1').textContent=n[0]+' starts each game on';$('hcL2').textContent=n[1]+' starts each game on';}}
 $('hcOn').onchange=function(){$('hcBox').style.display=this.checked?'':'none';refreshFirstServeLabels();};
 $('n1').addEventListener('input',refreshFirstServeLabels);$('n2').addEventListener('input',refreshFirstServeLabels);
 
@@ -1204,7 +1207,7 @@ function drawFixtures(list,note,seqMap,swapNote){
 }
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 
-function updateScratchBtn_(){var b=$('scratchBtn');if(b)b.style.display=(activeFixture&&activeFixture.id)?'':'none';}
+function updateScratchBtn_(){var b=$('scratchBtn');if(b)b.style.display=(activeFixture&&activeFixture.id)?'':'none';if(typeof updateWarmupOpt_==='function')updateWarmupOpt_();}
 function applyFixture(fx){
   activeFixture=fx;
   updateScratchBtn_();
@@ -1673,9 +1676,17 @@ $('scratchBtn').onclick=function(){
   }).then(function(){btn.disabled=false;btn.textContent='Neither player here — mark match as scratched';});
 };
 
-/* ---- warm-up timer: 2:00 countdown, audible half-way and time-up alerts ---- */
-var WARMUP_SEC=120, wu=null, audioCtx=null;
+/* ---- warm-up timer: comp-configured countdown, audible half-way and time-up alerts ---- */
+var DEFAULT_WARMUP_SEC=180, wu=null, audioCtx=null;
+function compWarmupSec_(){var v=activeFixture&&activeFixture.warmupSec;return (v==null)?DEFAULT_WARMUP_SEC:(Number(v)||0);}
+function fmtLen_(sec){var m=Math.floor(sec/60),r=sec%60;return r?(m+':'+('0'+r).slice(-2)):String(m);}
+function updateWarmupOpt_(){
+  var sec=compWarmupSec_(),row=$('warmopt');if(!row)return;
+  row.style.display=sec>0?'':'none';
+  $('warmupLbl').textContent=(sec>0?fmtLen_(sec)+'-minute w':'W')+'arm-up timer (with sound)';
+}
 try{if(store.get('cc_warmup')==='0')$('warmupOn').checked=false;}catch(e){}
+updateWarmupOpt_();
 $('warmupOn').onchange=function(){try{store.set('cc_warmup',this.checked?'1':'0');}catch(e){}};
 function unlockAudio_(){
   try{
@@ -1700,9 +1711,15 @@ function playTones_(seq,vol){
 function speak_(text){
   try{if(window.speechSynthesis){window.speechSynthesis.cancel();var u=new SpeechSynthesisUtterance(text);u.rate=0.95;u.volume=1;window.speechSynthesis.speak(u);}}catch(e){}
 }
-function warmupHalfAlert_(){
+function sayTime_(sec){
+  var m=Math.floor(sec/60),r=sec%60,out=[];
+  if(m)out.push(m+(m===1?' minute':' minutes'));
+  if(r)out.push(r+' seconds');
+  return out.join(' ')||'no time';
+}
+function warmupHalfAlert_(remSec){
   playTones_([[880,0,0.22],[880,0.32,0.22]],0.55);
-  speak_('One minute remaining');
+  speak_(sayTime_(remSec)+' remaining');
   try{if(navigator.vibrate)navigator.vibrate([200,100,200]);}catch(e){}
 }
 function warmupDoneAlert_(){
@@ -1711,45 +1728,51 @@ function warmupDoneAlert_(){
   try{if(navigator.vibrate)navigator.vibrate([400,150,400,150,800]);}catch(e){}
 }
 function warmupPaint_(){
-  if(!wu)return;
+  if(!wu||!wu.total)return 0;
   var rem=wu.paused?wu.remaining:Math.max(0,Math.ceil((wu.endAt-Date.now())/1000));
   $('wuTime').textContent=Math.floor(rem/60)+':'+('0'+(rem%60)).slice(-2);
-  $('wuBar').style.width=(rem/WARMUP_SEC*100)+'%';
+  $('wuBar').style.width=(rem/wu.total*100)+'%';
   return rem;
 }
 function warmupTick_(){
-  if(!wu||wu.paused)return;
+  if(!wu||!wu.total||wu.paused)return;
   var rem=warmupPaint_();
-  if(!wu.halfDone&&rem<=WARMUP_SEC/2){
-    wu.halfDone=true;var el=$('warmup');el.classList.add('half');$('wuMsg').textContent='ONE MINUTE LEFT';warmupHalfAlert_();
+  if(!wu.halfDone&&rem<=wu.total/2){
+    wu.halfDone=true;$('warmup').classList.add('half');$('wuMsg').textContent='HALF TIME — '+Math.floor(rem/60)+':'+('0'+(rem%60)).slice(-2)+' LEFT';warmupHalfAlert_(rem);
   }
   if(rem<=0&&!wu.over){
     wu.over=true;clearInterval(wu.timer);var el2=$('warmup');el2.classList.remove('half');el2.classList.add('done');
-    $('wuMsg').textContent='TIME UP — START THE MATCH';$('wuPause').style.display='none';$('wuGo').textContent='Start match';
+    $('wuMsg').textContent='TIME UP — CHOOSE WHO SERVES AND START';$('wuPause').style.display='none';
     warmupDoneAlert_();
   }
 }
 function startWarmup_(done){
   unlockAudio_();
-  wu={endAt:Date.now()+WARMUP_SEC*1000,remaining:WARMUP_SEC,paused:false,halfDone:false,over:false,done:done,timer:null};
-  $('score').classList.add('warming');var el=$('warmup');el.className='on';$('wuMsg').textContent='';$('wuPause').style.display='';$('wuPause').textContent='Pause';$('wuGo').textContent='Start match now';
+  var total=(compWarmupSec_()>0&&$('warmupOn').checked)?compWarmupSec_():0;
+  wu={total:total,endAt:Date.now()+total*1000,remaining:total,paused:false,halfDone:false,over:false,done:done,timer:null};
+  $('score').classList.add('warming');
+  $('warmup').className='on'+(total?'':' ready');
+  $('wuMsg').textContent=total?'':'WHO SERVES FIRST?';$('wuPause').style.display=total?'':'none';$('wuPause').textContent='Pause';
+  $('warmup').querySelector('.wl').textContent=total?'Warm-up':'Ready to start';
   var n=M.config.players;$('wuVs').textContent=n[0].name+'  v  '+n[1].name;
-  warmupPaint_();
-  wu.timer=setInterval(warmupTick_,250);
-  keepAwake();
+  $('wuGo0').textContent='START · '+firstName(0)+' to serve';$('wuGo1').textContent='START · '+firstName(1)+' to serve';
+  if(total){warmupPaint_();wu.timer=setInterval(warmupTick_,250);keepAwake();}
 }
-function endWarmup_(){
+function endWarmup_(server){
   if(!wu)return;clearInterval(wu.timer);try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
   var cb=wu.done;wu=null;$('warmup').className='';$('score').classList.remove('warming');
+  M.config.firstServer=server;M.server=server;M.side='R';M.history=[];
+  renderScore();
   if(cb)cb();
 }
 function cancelWarmup_(){
   if(!wu)return;clearInterval(wu.timer);try{if(window.speechSynthesis)window.speechSynthesis.cancel();}catch(e){}
   wu=null;$('warmup').className='';$('score').classList.remove('warming');
 }
-$('wuGo').onclick=function(){endWarmup_();};
+$('wuGo0').onclick=function(){endWarmup_(0);};
+$('wuGo1').onclick=function(){endWarmup_(1);};
 $('wuPause').onclick=function(){
-  if(!wu||wu.over)return;
+  if(!wu||wu.over||!wu.total)return;
   if(wu.paused){wu.endAt=Date.now()+wu.remaining*1000;wu.paused=false;$('wuPause').textContent='Pause';}
   else{wu.remaining=Math.max(0,Math.ceil((wu.endAt-Date.now())/1000));wu.paused=true;$('wuPause').textContent='Resume';}
   warmupPaint_();
@@ -1765,7 +1788,7 @@ $('start').onclick=function(){
     pointsToWin:activeFixture?activeFixture.pointsToWin||15:15,
     winByTwo:activeFixture?!!activeFixture.winByTwo:false,
     bestOf:activeFixture?activeFixture.bestOf||5:5,
-    firstServer:parseInt(pressedVal($('firstServe')),10),
+    firstServer:0,   // chosen on the warm-up / ready panel
     handicap:$('hcOn').checked?[parseInt($('hc1').value,10)||0,parseInt($('hc2').value,10)||0]:[0,0]
   };
   if(cfg.handicap.some(function(h){return h>=cfg.pointsToWin-1;})){alert('A handicap start of '+(cfg.pointsToWin-1)+' or more is too close to the winning score ('+cfg.pointsToWin+'). Choose a smaller start.');return;}
@@ -1782,9 +1805,8 @@ $('start').onclick=function(){
     games:[{startTs:clockNow(),endTs:'',durationSec:0,breakBeforeSec:0}]};
   applyMatchChrome(cfg);
   renderScore();show('score');
-  if($('warmupOn').checked){
-    startWarmup_(function(){M.timing.games[0].startTs=clockNow();startTimers();});
-  }else{startTimers();}
+  gapOpen_={};
+  startWarmup_(function(){M.timing.games[0].startTs=clockNow();startTimers();});
 };
 function isLight(hex){var c=hex.replace('#','');if(c.length===3)c=c.replace(/./g,'$&$&');
   var r=parseInt(c.substr(0,2),16),g=parseInt(c.substr(2,2),16),b=parseInt(c.substr(4,2),16);
@@ -1964,6 +1986,18 @@ $('histDrawer').onclick=function(ev){if(ev.target===$('histDrawer'))$('histDrawe
 $('exit').onclick=function(){if(confirm('Exit match without saving?')){clearInterval(tick);show('setup');}};
 
 /* ---- between games overlay (shows the running break timer) ---- */
+var gapOpen_={};
+function clockLabel_(iso){if(!iso)return '';var d=new Date(iso);if(isNaN(d.getTime()))return '';try{return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(e){return '';}}
+function gapGameDetail_(i){
+  var g=M.games[i],tg=(M.timing&&M.timing.games[i])||{},bits=[];
+  var st=clockLabel_(tg.startTs),en=clockLabel_(tg.endTs);
+  if(st)bits.push('<span>Started <b>'+esc(st)+'</b></span>');
+  if(en)bits.push('<span>Finished <b>'+esc(en)+'</b></span>');
+  if(tg.durationSec)bits.push('<span>Duration <b>'+fmtT(tg.durationSec)+'</b></span>');
+  if(i>0&&tg.breakBeforeSec)bits.push('<span>Break before <b>'+fmtT(tg.breakBeforeSec)+'</b></span>');
+  var w=M.config.players[g.winner].name;
+  return '<div class="gdline"><b>'+esc(w)+'</b> won '+g.points[0]+'–'+g.points[1]+'</div><div class="gdbits">'+(bits.join('')||'<span>No timing recorded</span>')+'</div>';
+}
 function openGap(){
   var last=M.games[M.games.length-1];
   $('gapTitle').textContent='Game '+M.games.length+' to '+M.config.players[last.winner].name+
@@ -1971,13 +2005,14 @@ function openGap(){
   $('gapSub').textContent=M.config.players[M.server].name+' serves next — swap box on court if needed.';
   var gs=matchGamesScore(M);
   var h='<div class="gaprow gaphdr"><span>Game</span><span style="color:var(--p1t)">'+esc(firstName(0))+'</span><span style="color:var(--p2t)">'+esc(firstName(1))+'</span><span>Time</span></div>';
-  M.games.forEach(function(g,i){var d=(M.timing.games[i]||{}).durationSec||0;var w=g.winner;
-    h+='<div class="gaprow'+(w===0?' w0':' w1')+'"><span>#'+(i+1)+'</span>'+
+  M.games.forEach(function(g,i){var tg=M.timing.games[i]||{},d=tg.durationSec||0;var w=g.winner;
+    h+='<div class="gaprow gapgame'+(w===0?' w0':' w1')+'" data-g="'+i+'" role="button" tabindex="0" style="cursor:pointer"><span>'+(gapOpen_[i]?'⌄':'›')+' #'+(i+1)+'</span>'+
       '<span class="tnum" style="color:var(--p1t)">'+g.points[0]+'</span>'+
       '<span class="tnum" style="color:var(--p2t)">'+g.points[1]+'</span>'+
-      '<span class="tnum">'+fmtT(d)+'</span></div>';});
+      '<span class="tnum">'+fmtT(d)+'</span></div>'+
+      '<div class="gapdetail" id="gapd'+i+'" style="display:'+(gapOpen_[i]?'block':'none')+'">'+gapGameDetail_(i)+'</div>';});
   h+='<div class="gaprow gaptot"><span>Games</span><span class="tnum" style="color:var(--p1t)">'+gs[0]+'</span><span class="tnum" style="color:var(--p2t)">'+gs[1]+'</span><span class="tnum">'+fmtT(M.timing.matchSec)+'</span></div>';
-  $('gapSummary').innerHTML=h;
+  $('gapSummary').innerHTML=h+'<div class="hint" style="margin:4px 2px 0">Tap a game for its timings.</div>';
   loadTie();
   paintTimers();
   $('gap').classList.add('active');
@@ -2085,9 +2120,22 @@ function renderTie(d){
     row.appendChild(right);
 
     wrap.appendChild(row);
+    if(l.played&&!me&&fx&&(fx.gameDetail||[]).length){
+      var det=document.createElement('div');det.className='tiedetail';det.style.display=expandedFx_[fx.id]?'block':'none';
+      var tl=fixtureTimingLine_(fx);if(tl){var tdv=document.createElement('div');tdv.className='tdline';tdv.textContent=tl;det.appendChild(tdv);}
+      det.appendChild(fixtureGameDetailEl_(fx));
+      row.style.cursor='pointer';right.textContent+=expandedFx_[fx.id]?' ⌄':' ›';
+      row.onclick=function(ev){if(ev.target.closest&&ev.target.closest('button'))return;var o=!expandedFx_[fx.id];expandedFx_[fx.id]=o;det.style.display=o?'block':'none';right.textContent=right.textContent.replace(/ [›⌄]$/,'')+(o?' ⌄':' ›');};
+      wrap.appendChild(det);
+    }
   });
   el.appendChild(wrap);
 }
+$('gapSummary').onclick=function(e){
+  var row=e.target.closest?e.target.closest('.gapgame'):null;if(!row)return;
+  var i=row.getAttribute('data-g'),d=$('gapd'+i),open=d.style.display==='none';
+  gapOpen_[i]=open;d.style.display=open?'block':'none';row.firstChild.textContent=(open?'⌄':'›')+' #'+(Number(i)+1);
+};
 $('gapUndo').onclick=function(){undo(M);$('gap').classList.remove('active');lastGames=M.games.length;renderScore();};
 
 function openAbandon(){

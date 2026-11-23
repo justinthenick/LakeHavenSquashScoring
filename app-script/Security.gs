@@ -114,3 +114,4 @@ function previewPlayerMerge(){assertAdmin_();return previewPlayerMerge_.apply(nu
 function mergePlayers(){assertAdmin_();try{return mergePlayers_.apply(null,arguments);}finally{bumpFxGen_();}}
 function ignoreDuplicatePair(){assertAdmin_();return ignoreDuplicatePair_.apply(null,arguments);}
 function clearIgnoredDuplicates(){assertAdmin_();return clearIgnoredDuplicates_.apply(null,arguments);}
+function setCompWarmupSeconds(){assertAdmin_();try{return setCompWarmupSeconds_.apply(null,arguments);}finally{bumpFxGen_();}}

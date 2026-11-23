@@ -150,6 +150,7 @@ function readFixturesUncached_(date) {
   staticRows_('teams','select=team_id,team_name').forEach(function(t){ teamNames[t.team_id] = t.team_name; });
 
   var rules={};staticRows_('comps','select=comp_ref,points_per_game,win_by_two,best_of,venue_id').forEach(function(c){rules[c.comp_ref]=c;});
+  var warmBy={};try{staticRows_('comps','select=comp_ref,warmup_seconds').forEach(function(c){warmBy[c.comp_ref]=c.warmup_seconds;});}catch(e){}
   var venueById={};staticRows_('venues','select=id,name,court_count').forEach(function(v){venueById[v.id]=v;});
   var tieCourt={};staticRows_('tie_court_allocations','select=comp_ref,round,tie_number,court_number').forEach(function(a){tieCourt[a.comp_ref+'|'+a.round+'|'+a.tie_number]=a.court_number;});
   var fixtureOverride={};staticRows_('fixture_court_overrides','select=fixture_id,court_number').forEach(function(o){fixtureOverride[o.fixture_id]=o.court_number;});
@@ -171,7 +172,7 @@ function readFixturesUncached_(date) {
       gamesP1:statuses[f.fixture_id].gamesP1,gamesP2:statuses[f.fixture_id].gamesP2,
       durationSec:statuses[f.fixture_id].durationSec||0,startTime:statuses[f.fixture_id].startTime||'',endTime:statuses[f.fixture_id].endTime||'',gameDetail:statuses[f.fixture_id].gameDetail||[],timingError:statuses[f.fixture_id].timingError||'',
       id: f.fixture_id, player1Id:f.player1_id, player2Id:f.player2_id,
-      pointsToWin:comp.points_per_game||15,winByTwo:!!comp.win_by_two,bestOf:comp.best_of||5,
+      pointsToWin:comp.points_per_game||15,winByTwo:!!comp.win_by_two,bestOf:comp.best_of||5,warmupSec:(warmBy[f.comp_ref]==null?180:(Number(warmBy[f.comp_ref])||0)),
       player1: playerNames[f.player1_id] || '', player2: playerNames[f.player2_id] || '',
       scheduled: sched,
       comp: f.comp_ref, round: f.round, line: f.line,
